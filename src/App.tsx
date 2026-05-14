@@ -715,29 +715,50 @@ const TreeView: React.FC<{
 // TeachingsModal
 // ============================================================
 
+const TEACHINGS = [
+  {
+    num: '①',
+    title: '入口を減らす',
+    principle: '並行作業を減らすべし。',
+    example: '現在進行中のタスク数に厳格な上限を設け、それ以外の依頼は一旦別のストック場所に置く。',
+  },
+  {
+    num: '②',
+    title: '制約を先に固定する',
+    principle: '迷いを遮断すべし。',
+    example: '「今日はこの領域以外には手を出さない」といった制約を最初に設定し、判断の計算資源を節約する。',
+  },
+  {
+    num: '③',
+    title: '他者の頭脳を組み込む',
+    principle: '自分一人で完結させないべし。',
+    example: '6割程度の思考ができた段階で他者に共有し、前提のズレや抜け漏れを早い段階で指摘してもらう。',
+  },
+]
+
 const TeachingsModal: React.FC<{onClose:()=>void}> = ({onClose}) => (
   <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[80vh] overflow-y-auto">
+    <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto">
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2"><BookOpen size={18} className="text-navy"/><h2 className="font-semibold text-gray-800">ノイマンの教え</h2></div>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
       </div>
-      <div className="px-6 py-5 space-y-6">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-navy bg-navy/10 px-2 py-0.5 rounded-full">教え 1</span>
-            <h3 className="font-semibold text-gray-800">今日の3つ</h3>
-          </div>
-          <p className="text-sm text-gray-600 leading-relaxed">1日に「今日やる」として選ぶタスクは<strong>最大3つ</strong>。4つ目は入れない。優先順位を強制的に明確にし、完了の達成感を毎日積み重ねるための原則。</p>
-        </div>
-        <hr className="border-gray-100"/>
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-navy bg-navy/10 px-2 py-0.5 rounded-full">教え 3</span>
-            <h3 className="font-semibold text-gray-800">やらないことリスト</h3>
-          </div>
-          <p className="text-sm text-gray-600 leading-relaxed">「今週はやらないこと」を意図的に決める。やることを絞るのではなく、<strong>やらないことを先に決める</strong>ことで、本当に大切な仕事への集中密度を高める。</p>
-        </div>
+      <div className="px-6 py-5 space-y-5">
+        {TEACHINGS.map((t, i) => (
+          <React.Fragment key={t.num}>
+            {i > 0 && <hr className="border-gray-100"/>}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-navy bg-navy/10 px-2 py-0.5 rounded-full">教え {t.num}</span>
+                <h3 className="font-semibold text-gray-800">{t.title}</h3>
+              </div>
+              <p className="text-sm font-medium text-gray-700">{t.principle}</p>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                <span className="font-medium text-gray-600">具体例：</span>{t.example}
+              </p>
+            </div>
+          </React.Fragment>
+        ))}
       </div>
       <div className="flex justify-end px-6 py-4 border-t border-gray-100">
         <button onClick={onClose} className="px-4 py-2 text-sm bg-navy text-white rounded-md hover:bg-navy-dark">閉じる</button>
