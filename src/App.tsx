@@ -58,6 +58,7 @@ interface HistoryEntry {
 interface AppData {
   tasks: Task[]
   history: HistoryEntry[]
+  columnOrder: string[]   // 宛先列の表示順
 }
 
 type SyncStatus = 'idle' | 'syncing' | 'success' | 'error' | 'disconnected'
@@ -205,9 +206,10 @@ function buildTreeLayout(tasks: Task[]): Map<string, { x: number; y: number }> {
 const loadData = (): AppData => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { tasks: [], history: [] }
+    if (!raw) return { tasks: [], history: [], columnOrder: [] }
     const data = JSON.parse(raw) as AppData
-    data.history = data.history ?? []   // 後方互換
+    data.history     = data.history     ?? []   // 後方互換
+    data.columnOrder = data.columnOrder ?? []   // 後方互換
     data.tasks = (data.tasks ?? []).map(t => ({
       ...t,
       memo:        (t as Task).memo        ?? '',
@@ -218,7 +220,7 @@ const loadData = (): AppData => {
       completedAt: (t as Task).completedAt ?? null,
     }))
     return data
-  } catch { return { tasks: [], history: [] } }
+  } catch { return { tasks: [], history: [], columnOrder: [] } }
 }
 
 const saveData = (data: AppData) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
@@ -552,108 +554,219 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onEdit,onDel
         </div>
       )}
 
-      <div className="bg-white px-4 py-3 flex gap-3 items-start">
-        {/* チェックボックス */}
-        <button onClick={()=>onComplete(task.id)}
-          className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-            task.completed ? 'bg-navy border-navy' : 'border-gray-300 hover:border-navy'
-          }`}>
-          {task.completed && <Check size={11} className="text-white"/>}
-        </button>
+      <div className="bg-white px-4 py-3">
+        {/* 上段：チェックボックス ＋ タイトル等 ＋ アクション */}
+        <div className="flex gap-3 items-start">
+          <button onClick={()=>onComplete(task.id)}
+            className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+              task.completed ? 'bg-navy border-navy' : 'border-gray-300 hover:border-navy'
+            }`}>
+            {task.completed && <Check size={11} className="text-white"/>}
+          </button>
 
-        {/* 本文 */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className={`text-sm font-medium ${task.completed?'line-through text-gray-400':todayDue?'text-red-700':'text-gray-800'}`}>
-              {task.title}
-            </span>
-            <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${pc.badge}`}>{pc.label}</span>
-            {task.effort>0 && <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${ec.color}`}>{ec.short}</span>}
-            {!hideAssignee && task.assignee!==DEFAULT_ASSIGNEE && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-navy/10 text-navy flex-shrink-0">→ {task.assignee}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className={`text-sm font-medium ${task.completed?'line-through text-gray-400':todayDue?'text-red-700':'text-gray-800'}`}>
+                {task.title}
+              </span>
+              <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${pc.badge}`}>{pc.label}</span>
+              {task.effort>0 && <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${ec.color}`}>{ec.short}</span>}
+              {!hideAssignee && task.assignee!==DEFAULT_ASSIGNEE && (
+                <span className="text-xs px-1.5 py-0.5 rounded bg-navy/10 text-navy flex-shrink-0">→ {task.assignee}</span>
+              )}
+            </div>
+            {cond && <p className="text-xs text-gray-400 mt-0.5 truncate">完了条件: {cond}</p>}
+            {task.dueDate && (
+              <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${
+                todayDue ? 'text-red-600' : overdue ? 'text-red-500' : 'text-gray-400'
+              }`}>
+                <Calendar size={11}/>
+                <span>{fmtDate(task.dueDate)}{task.dueTime?` ${task.dueTime}`:''}{overdue&&!todayDue?'（期限切れ）':''}</span>
+              </div>
+            )}
+            {task.completed && task.completedAt && (
+              <p className="text-xs text-gray-400 mt-1">✓ {fmtDateTime(task.completedAt)} に完了</p>
             )}
           </div>
 
-          {/* 完了条件 */}
-          {cond && <p className="text-xs text-gray-400 mt-0.5 truncate">完了条件: {cond}</p>}
-
-          {/* 期限 */}
-          {task.dueDate && (
-            <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${
-              todayDue ? 'text-red-600' : overdue ? 'text-red-500' : 'text-gray-400'
-            }`}>
-              <Calendar size={11}/>
-              <span>{fmtDate(task.dueDate)}{task.dueTime?` ${task.dueTime}`:''}{overdue&&!todayDue?'（期限切れ）':''}</span>
-            </div>
-          )}
-
-          {/* メモ */}
-          {task.memo && (
-            <div className="mt-1.5 text-xs text-gray-600 bg-gray-50 rounded px-2 py-1.5 whitespace-pre-wrap line-clamp-3 leading-relaxed">
-              {task.memo}
-            </div>
-          )}
-
-          {/* 完了日時 */}
-          {task.completed && task.completedAt && (
-            <p className="text-xs text-gray-400 mt-1">✓ {fmtDateTime(task.completedAt)} に完了</p>
-          )}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button onClick={()=>onToday(task.id)}
+              title={task.isToday?'今日の3つから外す':'今日の3つに追加'}
+              className={`text-xs px-2 py-1 rounded transition-colors ${task.isToday?'bg-navy text-white':'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+              今日
+            </button>
+            <button onClick={()=>onEdit(task)} className="p-1 text-gray-400 hover:text-gray-700"><Pencil size={14}/></button>
+            <button onClick={()=>onDelete(task.id)} className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={14}/></button>
+          </div>
         </div>
 
-        {/* アクション */}
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <button onClick={()=>onToday(task.id)}
-            title={task.isToday?'今日の3つから外す':'今日の3つに追加'}
-            className={`text-xs px-2 py-1 rounded transition-colors ${task.isToday?'bg-navy text-white':'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-            今日
-          </button>
-          <button onClick={()=>onEdit(task)} className="p-1 text-gray-400 hover:text-gray-700"><Pencil size={14}/></button>
-          <button onClick={()=>onDelete(task.id)} className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={14}/></button>
-        </div>
+        {/* メモ：カード全幅で表示 */}
+        {task.memo && (
+          <div className="mt-2 text-xs text-gray-600 bg-gray-50 rounded px-3 py-2 whitespace-pre-wrap leading-relaxed">
+            {task.memo}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
 // ============================================================
-// AssigneeColumns（全タスク用）
+// AssigneeColumns — DnD対応（列・カード両方）
 // ============================================================
 
+const COL_W = 360  // 列幅 (px)
+
 interface AssigneeColsProps {
-  tasks: Task[]; knownAssignees: string[]
+  tasks: Task[]
+  knownAssignees: string[]
+  columnOrder: string[]
+  onReorderTasks: (tasks: Task[]) => void
+  onReorderColumns: (order: string[]) => void
   onComplete:(id:string)=>void; onToday:(id:string)=>void
   onEdit:(t:Task)=>void; onDelete:(id:string)=>void
 }
 
-const AssigneeCols: React.FC<AssigneeColsProps> = ({tasks,knownAssignees,onComplete,onToday,onEdit,onDelete}) => {
-  const cols = knownAssignees
-    .map(a=>({assignee:a, tasks:tasks.filter(t=>t.assignee===a)}))
-    .filter(c=>c.tasks.length>0)
+const AssigneeCols: React.FC<AssigneeColsProps> = ({
+  tasks, knownAssignees, columnOrder,
+  onReorderTasks, onReorderColumns,
+  onComplete, onToday, onEdit, onDelete,
+}) => {
+  const [dragTaskId,  setDragTaskId]  = useState<string|null>(null)
+  const [dragColName, setDragColName] = useState<string|null>(null)
+  const [dropTaskId,  setDropTaskId]  = useState<string|null>(null)
+  const [dropColName, setDropColName] = useState<string|null>(null)
+  const [dropPos,     setDropPos]     = useState<'before'|'after'>('after')
+
+  // columnOrder に従って並べる（未登録は末尾に追加）
+  const orderedAssignees = [
+    ...columnOrder.filter(a => knownAssignees.includes(a)),
+    ...knownAssignees.filter(a => !columnOrder.includes(a)),
+  ]
+  const cols = orderedAssignees
+    .map(a => ({ assignee: a, tasks: tasks.filter(t => t.assignee === a) }))
+    .filter(c => c.tasks.length > 0)
+
+  const clear = () => {
+    setDragTaskId(null); setDragColName(null)
+    setDropTaskId(null); setDropColName(null)
+  }
+
+  // タスクをカード上にドロップ
+  const dropOnTask = (targetId: string, targetAssignee: string) => {
+    if (!dragTaskId || dragTaskId === targetId) { clear(); return }
+    const dragged = { ...tasks.find(t => t.id === dragTaskId)!, assignee: targetAssignee }
+    const rest    = tasks.filter(t => t.id !== dragTaskId)
+    let idx = rest.findIndex(t => t.id === targetId)
+    if (dropPos === 'after') idx++
+    rest.splice(idx, 0, dragged)
+    onReorderTasks(rest)
+    clear()
+  }
+
+  // タスクを列の空白にドロップ（列の末尾へ）
+  const dropOnCol = (targetAssignee: string) => {
+    if (!dragTaskId) { clear(); return }
+    const dragged = { ...tasks.find(t => t.id === dragTaskId)!, assignee: targetAssignee }
+    onReorderTasks([...tasks.filter(t => t.id !== dragTaskId), dragged])
+    clear()
+  }
+
+  // 列ヘッダーへドロップ（列の並び替え）
+  const dropOnColHeader = (targetAssignee: string) => {
+    if (!dragColName || dragColName === targetAssignee) { clear(); return }
+    const newOrder = [...orderedAssignees]
+    newOrder.splice(newOrder.indexOf(dragColName), 1)
+    newOrder.splice(newOrder.indexOf(targetAssignee), 0, dragColName)
+    onReorderColumns(newOrder)
+    clear()
+  }
 
   if (!cols.length) return (
     <div className="text-center py-12 text-gray-400 text-sm">タスクがありません</div>
   )
 
   return (
-    <div className="overflow-x-auto pb-2">
-      <div className="flex gap-4" style={{minWidth:'max-content'}}>
-        {cols.map(({assignee,tasks:ct})=>{
-          const active = ct.filter(t=>!t.completed).length
-          const isSelf = assignee===DEFAULT_ASSIGNEE
+    <div className="overflow-x-auto pb-4">
+      <div className="flex gap-4" style={{ minWidth: 'max-content' }}>
+        {cols.map(({ assignee, tasks: colTasks }) => {
+          const active       = colTasks.filter(t => !t.completed).length
+          const isSelf       = assignee === DEFAULT_ASSIGNEE
+          const isColTarget  = dropColName === assignee && !!dragColName && dragColName !== assignee
+          const isDraggingCol = dragColName === assignee
+
           return (
-            <div key={assignee} className="w-80 flex-shrink-0">
-              <div className={`flex items-center justify-between px-3 py-2 rounded-lg mb-2 ${isSelf?'bg-navy/10':'bg-amber-50 border border-amber-200'}`}>
+            <div
+              key={assignee}
+              style={{ width: COL_W }}
+              className={`flex-shrink-0 transition-opacity ${isDraggingCol ? 'opacity-30' : ''}`}
+              onDragOver={e => { e.preventDefault(); if (dragTaskId) setDropColName(assignee) }}
+              onDrop={() => { if (dragTaskId) dropOnCol(assignee) }}
+            >
+              {/* 列ヘッダー（ドラッグで列並び替え） */}
+              <div
+                draggable
+                onDragStart={e => { e.stopPropagation(); setDragColName(assignee); setDragTaskId(null) }}
+                onDragEnd={clear}
+                onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDropColName(assignee) }}
+                onDrop={e => { e.stopPropagation(); dropOnColHeader(assignee) }}
+                className={[
+                  'flex items-center justify-between px-3 py-2.5 rounded-lg mb-2 cursor-grab select-none transition-all',
+                  isSelf ? 'bg-navy/10' : 'bg-amber-50 border border-amber-200',
+                  isColTarget ? 'ring-2 ring-navy shadow-md' : '',
+                ].join(' ')}
+              >
                 <div className="flex items-center gap-2">
-                  <Users size={13} className={isSelf?'text-navy':'text-amber-600'}/>
-                  <span className={`text-sm font-semibold ${isSelf?'text-navy':'text-amber-700'}`}>{assignee}</span>
+                  <span className="text-gray-300 text-base leading-none">⠿</span>
+                  <Users size={13} className={isSelf ? 'text-navy' : 'text-amber-600'} />
+                  <span className={`text-sm font-semibold ${isSelf ? 'text-navy' : 'text-amber-700'}`}>
+                    {assignee}
+                  </span>
                 </div>
-                <span className="text-xs text-gray-500 bg-white px-1.5 py-0.5 rounded-full">{active}件</span>
+                <span className="text-xs text-gray-500 bg-white px-1.5 py-0.5 rounded-full">
+                  {active}件
+                </span>
               </div>
-              <div className="space-y-2">
-                {ct.map(task=>(
-                  <TaskCard key={task.id} task={task} hideAssignee
-                    onComplete={onComplete} onToday={onToday} onEdit={onEdit} onDelete={onDelete}/>
-                ))}
+
+              {/* タスクカード一覧 */}
+              <div className="space-y-1 min-h-[40px]">
+                {colTasks.map(task => {
+                  const isTarget  = dropTaskId === task.id && !!dragTaskId && dragTaskId !== task.id
+                  const isDragging = dragTaskId === task.id
+
+                  return (
+                    <div key={task.id}>
+                      {/* ドロップライン（前） */}
+                      {isTarget && dropPos === 'before' && (
+                        <div className="h-1 bg-navy/60 rounded mx-2 mb-1" />
+                      )}
+
+                      <div
+                        draggable
+                        onDragStart={e => { e.stopPropagation(); setDragTaskId(task.id); setDragColName(null) }}
+                        onDragEnd={clear}
+                        onDragOver={e => {
+                          e.preventDefault(); e.stopPropagation()
+                          if (!dragTaskId) return
+                          setDropTaskId(task.id); setDropColName(null)
+                          const r = e.currentTarget.getBoundingClientRect()
+                          setDropPos(e.clientY < r.top + r.height / 2 ? 'before' : 'after')
+                        }}
+                        onDrop={e => { e.stopPropagation(); dropOnTask(task.id, assignee) }}
+                        className={`transition-opacity cursor-grab ${isDragging ? 'opacity-25' : ''}`}
+                      >
+                        <TaskCard task={task} hideAssignee
+                          onComplete={onComplete} onToday={onToday}
+                          onEdit={onEdit} onDelete={onDelete} />
+                      </div>
+
+                      {/* ドロップライン（後） */}
+                      {isTarget && dropPos === 'after' && (
+                        <div className="h-1 bg-navy/60 rounded mx-2 mt-1" />
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )
@@ -1196,6 +1309,7 @@ const Dialog: React.FC<DialogProps> = ({icon,iconColor,title,body,confirmLabel,c
 export default function App() {
   const [tasks,          setTasks]          = useState<Task[]>([])
   const [history,        setHistory]        = useState<HistoryEntry[]>([])
+  const [columnOrder,    setColumnOrder]    = useState<string[]>([])
   const [settings,       setSettings]       = useState<AppSettings>(defaultSettings())
   const [syncStatus,     setSyncStatus]     = useState<SyncStatus>('disconnected')
   const [isLoaded,       setIsLoaded]       = useState(false)
@@ -1235,6 +1349,7 @@ export default function App() {
               assignee:    (t as Task).assignee    ?? DEFAULT_ASSIGNEE,
             })))
             setHistory(data.history ?? [])
+            setColumnOrder(data.columnOrder ?? [])
             setSyncStatus('success')
             setTimeout(() => setSyncStatus('idle'), 2000)
             setIsLoaded(true)
@@ -1249,6 +1364,7 @@ export default function App() {
       const local = loadData()
       setTasks(local.tasks)
       setHistory(local.history)
+      setColumnOrder(local.columnOrder ?? [])
       setIsLoaded(true)
     }
     doLoad()
@@ -1257,8 +1373,8 @@ export default function App() {
   // localStorage への保存
   useEffect(() => {
     if (!isLoaded) return
-    saveData({ tasks, history })
-  }, [tasks, history, isLoaded])
+    saveData({ tasks, history, columnOrder })
+  }, [tasks, history, columnOrder, isLoaded])
 
   // Gist への自動同期（3秒デバウンス）
   const syncTimer = useRef<ReturnType<typeof setTimeout>>()
@@ -1272,7 +1388,7 @@ export default function App() {
 
     syncTimer.current = setTimeout(async () => {
       try {
-        const newGistId = await gistSave(s.githubToken, s.gistId, { tasks, history })
+        const newGistId = await gistSave(s.githubToken, s.gistId, { tasks, history, columnOrder })
         setSettings(prev => {
           const next = { ...prev, gistId: newGistId, lastSynced: new Date().toISOString() }
           saveSettings(next)
@@ -1286,7 +1402,7 @@ export default function App() {
     }, 3000)
 
     return () => { if (syncTimer.current) clearTimeout(syncTimer.current) }
-  }, [tasks, history, isLoaded])
+  }, [tasks, history, columnOrder, isLoaded])
 
   // 履歴エントリを先頭に追加（上限超えたら古いものを削除）
   const addHistory = (action: HistoryAction, task: Task, detail?: string) => {
@@ -1365,6 +1481,9 @@ export default function App() {
     if (task) addHistory('deleted', task)
     setDeleteId(null)
   }
+
+  const handleReorderTasks   = (newTasks: Task[])   => setTasks(newTasks)
+  const handleReorderColumns = (newOrder: string[]) => setColumnOrder(newOrder)
 
   const handleSetParent = (taskId: string, parentId: string | null) => {
     const task   = tasks.find(t => t.id === taskId)
@@ -1510,7 +1629,14 @@ export default function App() {
                   ))}
                 </div>
               </div>
-              <AssigneeCols tasks={allSectionTasks} knownAssignees={knownAssignees} {...cardProps}/>
+              <AssigneeCols
+                tasks={allSectionTasks}
+                knownAssignees={knownAssignees}
+                columnOrder={columnOrder}
+                onReorderTasks={handleReorderTasks}
+                onReorderColumns={handleReorderColumns}
+                {...cardProps}
+              />
             </section>
           </>
         )}
