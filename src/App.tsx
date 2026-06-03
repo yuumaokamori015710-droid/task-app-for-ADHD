@@ -235,8 +235,8 @@ const normalizeMiniSteps = (steps: unknown): MiniStep[] => {
 }
 
 const ISSUE_CRITERIA = [
-  '本質的な問題であること',
-  'よい仮説が出されていること',
+  '本質的な問い',
+  '深い仮説',
   '答えが出せること',
 ]
 
@@ -567,8 +567,8 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, knownAssignees, onSave, 
             <textarea value={form.memo}
               onChange={e=>setForm(p=>({...p,memo:e.target.value}))}
               placeholder="補足・背景・リンクなど自由記述..."
-              rows={8}
-              className="w-full min-h-48 border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-navy resize-y"/>
+              rows={4}
+              className="w-full min-h-28 border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-navy resize-y"/>
           </div>
 
           {/* イシュー */}
@@ -577,7 +577,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, knownAssignees, onSave, 
             <textarea value={form.issue.text}
               onChange={e=>setIssue({ text: e.target.value })}
               placeholder="このタスクで答えを出したい本質的な問い..."
-              rows={3}
+              rows={2}
               className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-navy resize-y"/>
             <div className="mt-2 grid gap-2 sm:grid-cols-3">
               {ISSUE_CRITERIA.map((label, i) => (
@@ -667,27 +667,6 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onEdit,onDel
               )}
             </div>
             <p className="text-xs text-gray-400 mt-0.5 truncate">完了条件: {cond}</p>
-            {visibleSteps.length > 0 && (
-              <div className="mt-2 rounded px-3 py-2 text-xs leading-relaxed bg-blue-50 text-blue-700">
-                <div className="font-semibold mb-1">
-                  ステップ完了 {completedStepCount}/{visibleSteps.length}
-                </div>
-                <div className="space-y-0.5">
-                  {visibleSteps.map((step, i) => (
-                    <div key={step.id} className="flex items-start gap-1.5">
-                      <span className={`mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
-                        step.done ? 'bg-navy border-navy text-white' : 'border-blue-300 bg-white'
-                      }`}>
-                        {step.done && <Check size={9}/>}
-                      </span>
-                      <span className={step.done ? 'line-through opacity-60' : ''}>
-                        {i + 1}. {step.text}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
             {task.issue.text && (
               <div className="mt-2 text-xs bg-amber-50 text-amber-800 rounded px-3 py-2 leading-relaxed">
                 <div className="flex items-center justify-between gap-2">
@@ -719,6 +698,28 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onEdit,onDel
             <button onClick={()=>onDelete(task.id)} className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={14}/></button>
           </div>
         </div>
+
+        {visibleSteps.length > 0 && (
+          <div className="mt-3 rounded px-3 py-2 text-xs leading-relaxed bg-blue-50 text-blue-700">
+            <div className="font-semibold mb-1">
+              ステップ完了 {completedStepCount}/{visibleSteps.length}
+            </div>
+            <div className="space-y-0.5">
+              {visibleSteps.map((step, i) => (
+                <div key={step.id} className="flex items-start gap-1.5">
+                  <span className={`mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
+                    step.done ? 'bg-navy border-navy text-white' : 'border-blue-300 bg-white'
+                  }`}>
+                    {step.done && <Check size={9}/>}
+                  </span>
+                  <span className={step.done ? 'line-through opacity-60' : ''}>
+                    {i + 1}. {step.text}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* メモ：カード全幅で表示 */}
         {task.memo && (
