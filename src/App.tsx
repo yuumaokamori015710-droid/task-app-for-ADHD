@@ -12,7 +12,6 @@ import {
 // ============================================================
 
 type Priority    = 'high' | 'medium' | 'low'
-type Filter      = 'all' | 'today' | 'thisWeek' | 'overdue'
 type ViewMode    = 'list' | 'gantt'
 type BoardGroupMode = 'assignee' | 'priority' | 'due'
 type DueGroup = 'overdue' | 'today' | 'thisWeek' | 'later' | 'noDate' | 'completed'
@@ -628,7 +627,8 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onEdit,onDel
   const cond       = fmtCondition(task)
   const overdue    = !task.completed && isOverdue(task.dueDate)
   const todayDue   = !task.completed && !!task.dueDate && isToday(task.dueDate)
-  const currentStep = getCurrentMiniStep(task)
+  const visibleSteps = normalizeMiniSteps(task.miniSteps).filter(s => s.text.trim())
+  const completedStepCount = visibleSteps.filter(s => s.done).length
 
   return (
     <div className={[
@@ -667,13 +667,25 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onEdit,onDel
               )}
             </div>
             <p className="text-xs text-gray-400 mt-0.5 truncate">完了条件: {cond}</p>
-            {currentStep && (
-              <div className={`mt-2 rounded px-3 py-2 text-xs leading-relaxed ${
-                currentStep.allDone ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'
-              }`}>
-                <span className="font-semibold">Step {currentStep.index}/{currentStep.total}</span>
-                <span className="mx-1">—</span>
-                <span>{currentStep.allDone ? '全ステップ完了' : currentStep.step.text}</span>
+            {visibleSteps.length > 0 && (
+              <div className="mt-2 rounded px-3 py-2 text-xs leading-relaxed bg-blue-50 text-blue-700">
+                <div className="font-semibold mb-1">
+                  ステップ完了 {completedStepCount}/{visibleSteps.length}
+                </div>
+                <div className="space-y-0.5">
+                  {visibleSteps.map((step, i) => (
+                    <div key={step.id} className="flex items-start gap-1.5">
+                      <span className={`mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
+                        step.done ? 'bg-navy border-navy text-white' : 'border-blue-300 bg-white'
+                      }`}>
+                        {step.done && <Check size={9}/>}
+                      </span>
+                      <span className={step.done ? 'line-through opacity-60' : ''}>
+                        {i + 1}. {step.text}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             {task.issue.text && (
@@ -767,6 +779,8 @@ const AssigneeCols: React.FC<AssigneeColsProps> = ({
     .filter(c => c.tasks.length > 0)
     .sort((a, b) => {
       if (groupMode !== 'assignee') return (orderIndex.get(a.key) ?? 0) - (orderIndex.get(b.key) ?? 0)
+      if (a.key === DEFAULT_ASSIGNEE) return -1
+      if (b.key === DEFAULT_ASSIGNEE) return 1
       const activeDiff = b.tasks.filter(t => !t.completed).length - a.tasks.filter(t => !t.completed).length
       if (activeDiff !== 0) return activeDiff
       return (orderIndex.get(a.key) ?? 0) - (orderIndex.get(b.key) ?? 0)
@@ -1293,7 +1307,6 @@ export default function App() {
   const [settings,       setSettings]       = useState<AppSettings>(defaultSettings())
   const [syncStatus,     setSyncStatus]     = useState<SyncStatus>('disconnected')
   const [isLoaded,       setIsLoaded]       = useState(false)
-  const [filter,         setFilter]         = useState<Filter>('all')
   const [viewMode,       setViewMode]       = useState<ViewMode>('list')
   const [boardGroupMode, setBoardGroupMode] = useState<BoardGroupMode>('assignee')
   const [showModal,      setShowModal]      = useState(false)
@@ -1429,15 +1442,7 @@ export default function App() {
   const todayTasks       = sortTasksForWork(tasks.filter(t=>t.isToday))
   const todayActiveCount = todayTasks.filter(t=>!t.completed).length
 
-  const allSectionTasks = sortTasksForWork(tasks.filter(t=>{
-    if(t.isToday) return false
-    switch(filter){
-      case 'today':    return !!t.dueDate&&isToday(t.dueDate)
-      case 'thisWeek': return !!t.dueDate&&isThisWeek(t.dueDate)
-      case 'overdue':  return !t.completed&&!!t.dueDate&&isOverdue(t.dueDate)
-      default:         return true
-    }
-  }))
+  const allSectionTasks = sortTasksForWork(tasks.filter(t=>!t.isToday))
 
   const handleSave = (task: Task) => {
     const isNew = !tasks.find(t => t.id === task.id)
@@ -1585,7 +1590,7 @@ export default function App() {
         {viewMode === 'list' && (
           <>
             {/* 今日の3つ — 中央寄せ */}
-            <section className="bg-gray-100 rounded-lg p-5 max-w-2xl mx-auto">
+            <section className="bg-gray-100 rounded-lg p-5">
               <div className="flex items-start justify-between mb-4">
                 <div><h2 className="font-semibold text-gray-800">今日の3つ</h2><p className="text-xs text-gray-500 mt-0.5">今日やる最重要タスク（最大3つ）</p></div>
                 <span className={`text-sm font-medium px-2.5 py-1 rounded-full flex-shrink-0 ${todayActiveCount>=MAX_TODAY?'bg-red-100 text-red-600':'bg-navy/10 text-navy'}`}>
@@ -1594,7 +1599,7 @@ export default function App() {
               </div>
               {todayTasks.length===0
                 ? <div className="text-center py-6 text-gray-400 text-sm">タスクカードの「今日」ボタンで追加できます</div>
-                : <div className="space-y-2">{todayTasks.map(t=><TaskCard key={t.id} task={t} {...cardProps}/>)}</div>
+                : <div className="grid gap-3 md:grid-cols-3">{todayTasks.map(t=><TaskCard key={t.id} task={t} {...cardProps}/>)}</div>
               }
             </section>
 
@@ -1607,7 +1612,7 @@ export default function App() {
                     {([
                       {key:'assignee' as BoardGroupMode,label:'宛先'},
                       {key:'priority' as BoardGroupMode,label:'優先度'},
-                      {key:'due' as BoardGroupMode,label:'完了時期'},
+                      {key:'due' as BoardGroupMode,label:'期限日'},
                     ]).map((mode, i)=>(
                       <button key={mode.key} onClick={()=>setBoardGroupMode(mode.key)}
                         className={`text-xs px-3 py-1.5 transition-colors ${i>0?'border-l border-gray-200':''} ${boardGroupMode===mode.key?'bg-navy text-white':'text-gray-600 hover:bg-gray-50'}`}>
@@ -1615,19 +1620,6 @@ export default function App() {
                       </button>
                     ))}
                   </div>
-                </div>
-                <div className="flex gap-1 flex-wrap">
-                  {([
-                    {key:'all'      as Filter,label:'すべて'},
-                    {key:'today'    as Filter,label:'今日'},
-                    {key:'thisWeek' as Filter,label:'今週'},
-                    {key:'overdue'  as Filter,label:'期限切れ'},
-                  ]).map(f=>(
-                    <button key={f.key} onClick={()=>setFilter(f.key)}
-                      className={`text-xs px-3 py-1.5 rounded-md transition-colors ${filter===f.key?'bg-navy text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                      {f.label}
-                    </button>
-                  ))}
                 </div>
               </div>
               <AssigneeCols
