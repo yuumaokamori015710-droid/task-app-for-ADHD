@@ -4,7 +4,7 @@ import {
   Plus, Pencil, Trash2, Check, Calendar, Download,
   AlertTriangle, X, BookOpen, Users, FileSpreadsheet, List, BarChart2,
   History, RotateCcw, Star, StarOff,
-  Cloud, CloudOff, Eye, EyeOff,
+  Cloud, CloudOff, Eye, EyeOff, Pin, PinOff,
 } from 'lucide-react'
 
 // ============================================================
@@ -36,6 +36,7 @@ interface Task {
   completed: boolean
   completedAt: string | null  // 完了日時（ISO）
   isToday: boolean
+  pinned: boolean
   assignee: string
   miniSteps: MiniStep[]
   issue: Issue
@@ -46,6 +47,7 @@ type HistoryAction =
   | 'created' | 'updated' | 'deleted'
   | 'completed' | 'uncompleted'
   | 'todayAdded' | 'todayRemoved'
+  | 'pinned' | 'unpinned'
   | 'autoDeleted'
 
 interface HistoryEntry {
@@ -79,8 +81,7 @@ const STORAGE_KEY      = 'task-app-data'
 const SETTINGS_KEY     = 'task-app-settings'
 const GIST_FILENAME    = 'neumann-task-app.json'
 const MAX_TODAY        = 3
-const HISTORY_RETENTION_DAYS = 7
-const COMPLETED_RETENTION_DAYS = 14
+const COMPLETED_HIDE_DAYS = 7
 const MIN_MINI_STEPS = 3
 const DAY_PX = 28
 
@@ -93,6 +94,8 @@ const ACTION_CONFIG: Record<HistoryAction, { label: string; icon: React.ReactNod
   uncompleted:   { label: '完了解除',     icon: <RotateCcw size={13}/>,  color: 'text-gray-600 bg-gray-100' },
   todayAdded:    { label: '今日に追加',   icon: <Star size={13}/>,       color: 'text-yellow-600 bg-yellow-50' },
   todayRemoved:  { label: '今日から除外', icon: <StarOff size={13}/>,    color: 'text-gray-500 bg-gray-100' },
+  pinned:        { label: 'ピン留め',     icon: <Pin size={13}/>,        color: 'text-sky-600 bg-sky-50' },
+  unpinned:      { label: 'ピン解除',     icon: <PinOff size={13}/>,     color: 'text-gray-500 bg-gray-100' },
   autoDeleted:   { label: '棚卸削除',     icon: <Trash2 size={13}/>,     color: 'text-red-600 bg-red-50' },
 }
 const DEFAULT_ASSIGNEE = '自分'
@@ -259,6 +262,7 @@ const normalizeTask = (t: Partial<Task>): Task => ({
   completed: !!t.completed,
   completedAt: t.completedAt ?? null,
   isToday: !!t.isToday,
+  pinned: !!t.pinned,
   assignee: t.assignee ?? DEFAULT_ASSIGNEE,
   miniSteps: normalizeMiniSteps((t as { miniSteps?: unknown }).miniSteps),
   issue: normalizeIssue((t as { issue?: unknown }).issue),
@@ -274,6 +278,7 @@ const getCurrentMiniStep = (task: Task) => {
 }
 
 const sortTasksForWork = (items: Task[]) => [...items].sort((a, b) => {
+  if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
   if (a.completed !== b.completed) return a.completed ? 1 : -1
   const aDue = a.dueDate || '9999-12-31'
   const bDue = b.dueDate || '9999-12-31'
@@ -281,10 +286,11 @@ const sortTasksForWork = (items: Task[]) => [...items].sort((a, b) => {
   return a.createdAt.localeCompare(b.createdAt)
 })
 
-const pruneHistory = (entries: HistoryEntry[]) => {
+const isHiddenCompletedTask = (task: Task) => {
+  if (!task.completed || !task.completedAt) return false
   const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() - HISTORY_RETENTION_DAYS)
-  return entries.filter(entry => new Date(entry.timestamp) >= cutoff)
+  cutoff.setDate(cutoff.getDate() - COMPLETED_HIDE_DAYS)
+  return new Date(task.completedAt) < cutoff
 }
 
 // ============================================================
@@ -299,7 +305,6 @@ const loadData = (): AppData => {
     data.history     = data.history     ?? []   // 後方互換
     data.columnOrder = data.columnOrder ?? []   // 後方互換
     data.tasks = (data.tasks ?? []).map(t => normalizeTask(t))
-    data.history = pruneHistory(data.history)
     return data
   } catch { return { tasks: [], history: [], columnOrder: [] } }
 }
@@ -429,6 +434,7 @@ const handleExportExcel = (tasks: Task[]) => {
 const makeNewTask = (): Task => ({
   id:genId(), title:'', memo:'', dueDate:'', dueTime:'', priority:'medium',
   completed:false, completedAt:null, isToday:false, assignee:DEFAULT_ASSIGNEE,
+  pinned:false,
   miniSteps: emptyMiniSteps(), issue: emptyIssue(),
   createdAt: new Date().toISOString(),
 })
@@ -617,12 +623,12 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, knownAssignees, onSave, 
 
 interface TaskCardProps {
   task: Task
-  onComplete:(id:string)=>void; onToday:(id:string)=>void
+  onComplete:(id:string)=>void; onToday:(id:string)=>void; onPin:(id:string)=>void
   onEdit:(t:Task)=>void; onDelete:(id:string)=>void
   hideAssignee?: boolean
 }
 
-const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onEdit,onDelete,hideAssignee=false}) => {
+const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onPin,onEdit,onDelete,hideAssignee=false}) => {
   const pc         = PRIORITY_CONFIG[task.priority]
   const cond       = fmtCondition(task)
   const overdue    = !task.completed && isOverdue(task.dueDate)
@@ -658,6 +664,11 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onEdit,onDel
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
+              <button onClick={()=>onPin(task.id)}
+                title={task.pinned?'ピン留めを外す':'ピン留めする'}
+                className={`p-0.5 rounded transition-colors ${task.pinned?'text-sky-600 bg-sky-50':'text-gray-300 hover:text-sky-600 hover:bg-sky-50'}`}>
+                <Pin size={13}/>
+              </button>
               <span className={`text-sm font-medium ${task.completed?'line-through text-gray-400':todayDue?'text-red-700':'text-gray-800'}`}>
                 {task.title}
               </span>
@@ -745,14 +756,14 @@ interface AssigneeColsProps {
   columnOrder: string[]
   onReorderTasks: (tasks: Task[]) => void
   onReorderColumns: (order: string[]) => void
-  onComplete:(id:string)=>void; onToday:(id:string)=>void
+  onComplete:(id:string)=>void; onToday:(id:string)=>void; onPin:(id:string)=>void
   onEdit:(t:Task)=>void; onDelete:(id:string)=>void
 }
 
 const AssigneeCols: React.FC<AssigneeColsProps> = ({
   tasks, groupMode, knownAssignees, columnOrder,
   onReorderTasks, onReorderColumns,
-  onComplete, onToday, onEdit, onDelete,
+  onComplete, onToday, onPin, onEdit, onDelete,
 }) => {
   const [dragTaskId,  setDragTaskId]  = useState<string|null>(null)
   const [dragColName, setDragColName] = useState<string|null>(null)
@@ -910,7 +921,7 @@ const AssigneeCols: React.FC<AssigneeColsProps> = ({
                         className={`transition-opacity cursor-grab ${isDragging ? 'opacity-25' : ''}`}
                       >
                         <TaskCard task={task} hideAssignee={groupMode === 'assignee'}
-                          onComplete={onComplete} onToday={onToday}
+                          onComplete={onComplete} onToday={onToday} onPin={onPin}
                           onEdit={onEdit} onDelete={onDelete} />
                       </div>
 
@@ -1141,11 +1152,11 @@ const GistSettingsModal: React.FC<GistSettingsModalProps> = ({
 }
 
 // ============================================================
-// HistoryModal — 操作履歴
+// HistoryModal — 作業の軌跡
 // ============================================================
 
-const HistoryModal: React.FC<{ history: HistoryEntry[]; onClose: () => void; onClear: () => void }> = ({
-  history, onClose, onClear,
+const HistoryModal: React.FC<{ history: HistoryEntry[]; onClose: () => void }> = ({
+  history, onClose,
 }) => {
   // 日付ごとにグループ化
   const grouped = history.reduce<Record<string, HistoryEntry[]>>((acc, entry) => {
@@ -1169,13 +1180,13 @@ const HistoryModal: React.FC<{ history: HistoryEntry[]; onClose: () => void; onC
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[84vh] flex flex-col">
 
         {/* ヘッダー */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
           <div className="flex items-center gap-2">
             <History size={18} className="text-navy"/>
-            <h2 className="font-semibold text-gray-800">操作履歴</h2>
+            <h2 className="font-semibold text-gray-800">作業の軌跡</h2>
             <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{history.length}件</span>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
@@ -1184,14 +1195,18 @@ const HistoryModal: React.FC<{ history: HistoryEntry[]; onClose: () => void; onC
         {/* 履歴リスト */}
         <div className="overflow-y-auto flex-1 px-6 py-4">
           {history.length === 0 ? (
-            <p className="text-center text-sm text-gray-400 py-12">操作履歴はまだありません</p>
+            <p className="text-center text-sm text-gray-400 py-12">作業の軌跡はまだありません</p>
           ) : (
             <div className="space-y-5">
+              <div className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2">
+                タスクの追加、編集、完了、ピン留めなどをすべて保持します。カード一覧から非表示になった完了タスクも、ここから過去の作業としてたどれます。
+              </div>
               {dateKeys.map(key => (
                 <div key={key}>
-                  <p className="text-xs font-bold text-gray-400 mb-2 sticky top-0 bg-white pb-1">
-                    {fmtDateKey(key)}
-                  </p>
+                  <div className="sticky top-0 bg-white pb-1 mb-2 flex items-center justify-between">
+                    <p className="text-xs font-bold text-gray-400">{fmtDateKey(key)}</p>
+                    <span className="text-[11px] text-gray-400">{grouped[key].length}件</span>
+                  </div>
                   <div className="space-y-0.5">
                     {grouped[key].map(entry => {
                       const cfg = ACTION_CONFIG[entry.action]
@@ -1228,10 +1243,7 @@ const HistoryModal: React.FC<{ history: HistoryEntry[]; onClose: () => void; onC
 
         {/* フッター */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 flex-shrink-0">
-          <button onClick={()=>{ if(window.confirm('履歴をすべて削除しますか？')) onClear() }}
-            className="text-xs text-gray-400 hover:text-red-500 transition-colors">
-            履歴をクリア
-          </button>
+          <p className="text-xs text-gray-400">履歴は自動削除されません</p>
           <button onClick={onClose} className="px-4 py-2 text-sm bg-navy text-white rounded-md hover:bg-navy-dark">
             閉じる
           </button>
@@ -1335,7 +1347,7 @@ export default function App() {
           const data = await gistLoad(s.githubToken, s.gistId)
           if (data) {
             setTasks((data.tasks ?? []).map(t => normalizeTask(t)))
-            setHistory(pruneHistory(data.history ?? []))
+            setHistory(data.history ?? [])
             setColumnOrder(data.columnOrder ?? [])
             setSyncStatus('success')
             setTimeout(() => setSyncStatus('idle'), 2000)
@@ -1356,28 +1368,6 @@ export default function App() {
     }
     doLoad()
   }, [])
-
-  // 完了から2週間経ったタスクを棚卸削除し、履歴に残す
-  useEffect(() => {
-    if (!isLoaded) return
-    const cutoff = new Date()
-    cutoff.setDate(cutoff.getDate() - COMPLETED_RETENTION_DAYS)
-    const expired = tasks.filter(t => t.completed && t.completedAt && new Date(t.completedAt) < cutoff)
-    if (!expired.length) return
-
-    setTasks(prev => prev.filter(t => !expired.some(e => e.id === t.id)))
-    setHistory(prev => pruneHistory([
-      ...expired.map(task => ({
-        id: genId(),
-        timestamp: new Date().toISOString(),
-        action: 'autoDeleted' as HistoryAction,
-        taskId: task.id,
-        taskTitle: task.title,
-        detail: `完了から${COMPLETED_RETENTION_DAYS}日経過`,
-      })),
-      ...prev,
-    ]))
-  }, [tasks, isLoaded])
 
   // localStorage への保存
   useEffect(() => {
@@ -1413,13 +1403,13 @@ export default function App() {
     return () => { if (syncTimer.current) clearTimeout(syncTimer.current) }
   }, [tasks, history, columnOrder, isLoaded])
 
-  // 履歴エントリを先頭に追加し、1週間より古い履歴を削除
+  // 履歴エントリを先頭に追加（履歴は全保持）
   const addHistory = (action: HistoryAction, task: Task, detail?: string) => {
     const entry: HistoryEntry = {
       id: genId(), timestamp: new Date().toISOString(),
       action, taskId: task.id, taskTitle: task.title, detail,
     }
-    setHistory(prev => pruneHistory([entry, ...prev]))
+    setHistory(prev => [entry, ...prev])
   }
 
   // Gist 接続
@@ -1440,10 +1430,11 @@ export default function App() {
     ...Array.from(new Set(tasks.map(t=>t.assignee).filter((a):a is string=>!!a&&a!==DEFAULT_ASSIGNEE))).sort()
   ]
 
-  const todayTasks       = sortTasksForWork(tasks.filter(t=>t.isToday))
+  const cardVisibleTasks = tasks.filter(t => !isHiddenCompletedTask(t))
+  const todayTasks       = sortTasksForWork(cardVisibleTasks.filter(t=>t.isToday))
   const todayActiveCount = todayTasks.filter(t=>!t.completed).length
 
-  const allSectionTasks = sortTasksForWork(tasks.filter(t=>!t.isToday))
+  const allSectionTasks = sortTasksForWork(cardVisibleTasks.filter(t=>!t.isToday))
 
   const handleSave = (task: Task) => {
     const isNew = !tasks.find(t => t.id === task.id)
@@ -1473,6 +1464,13 @@ export default function App() {
     addHistory(adding ? 'todayAdded' : 'todayRemoved', task)
   }
 
+  const handlePin = (id: string) => {
+    const task = tasks.find(t => t.id === id); if (!task) return
+    const nextPinned = !task.pinned
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, pinned: nextPinned } : t))
+    addHistory(nextPinned ? 'pinned' : 'unpinned', task)
+  }
+
   const handleEdit = (task: Task) => { setEditTask(task); setShowModal(true) }
 
   const handleDeleteConfirm = () => {
@@ -1493,7 +1491,7 @@ export default function App() {
   const handleReorderColumns = (newOrder: string[]) => setColumnOrder(newOrder)
 
   const cardProps = {
-    onComplete:handleComplete, onToday:handleToday,
+    onComplete:handleComplete, onToday:handleToday, onPin:handlePin,
     onEdit:handleEdit, onDelete:(id:string)=>setDeleteId(id),
   }
 
@@ -1539,8 +1537,8 @@ export default function App() {
               <BookOpen size={14}/><span className="hidden md:inline">ノイマンの教え</span>
             </button>
             <button onClick={()=>setShowHistory(true)}
-              className="flex items-center gap-1.5 text-sm bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-md transition-colors" title="操作履歴">
-              <History size={14}/><span className="hidden md:inline">履歴</span>
+              className="flex items-center gap-1.5 text-sm bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-md transition-colors" title="作業の軌跡">
+              <History size={14}/><span className="hidden md:inline">軌跡</span>
               {history.length > 0 && (
                 <span className="bg-white/30 text-white text-xs px-1.5 py-0.5 rounded-full leading-none">
                   {history.length > 99 ? '99+' : history.length}
@@ -1656,7 +1654,6 @@ export default function App() {
         <HistoryModal
           history={history}
           onClose={()=>setShowHistory(false)}
-          onClear={()=>setHistory([])}
         />
       )}
       {deleteId && (
