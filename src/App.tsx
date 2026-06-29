@@ -4,7 +4,7 @@ import {
   Plus, Pencil, Trash2, Check, Calendar, Download,
   AlertTriangle, X, BookOpen, Users, FileSpreadsheet, List, BarChart2,
   History, RotateCcw, Star, StarOff,
-  Cloud, CloudOff, Eye, EyeOff, Pin, PinOff,
+  Cloud, CloudOff, Eye, EyeOff, Pin, PinOff, ClipboardList, TrendingUp,
 } from 'lucide-react'
 
 // ============================================================
@@ -73,6 +73,13 @@ interface AppSettings {
   lastSynced: string | null
 }
 
+interface TaskTemplate {
+  id: string
+  title: string
+  description: string
+  task: Pick<Task, 'title' | 'memo' | 'priority' | 'miniSteps' | 'issue'>
+}
+
 // ============================================================
 // Constants
 // ============================================================
@@ -120,6 +127,48 @@ const TEACHINGS = [
   { num: '①', title: '入口を減らす',       principle: '並行作業を減らすべし。',          example: '現在進行中のタスク数に厳格な上限を設け、それ以外の依頼は一旦別のストック場所に置く。' },
   { num: '②', title: '制約を先に固定する', principle: '迷いを遮断すべし。',              example: '「今日はこの領域以外には手を出さない」といった制約を最初に設定し、判断の計算資源を節約する。' },
   { num: '③', title: '他者の頭脳を組み込む', principle: '自分一人で完結させないべし。', example: '6割程度の思考ができた段階で他者に共有し、前提のズレや抜け漏れを早い段階で指摘してもらう。' },
+]
+
+const makeTemplateSteps = (texts: string[]): MiniStep[] =>
+  texts.map((text, i) => ({ id: `template-step-${i}`, text, done: false }))
+
+const TASK_TEMPLATES: TaskTemplate[] = [
+  {
+    id: 'request-review',
+    title: '確認依頼',
+    description: '相手に見てほしい資料や判断を渡す',
+    task: {
+      title: '確認依頼を送る',
+      memo: '誰に: \n何を: \nどの段階まで: 判断できる状態まで\nどうする: 確認依頼する',
+      priority: 'medium',
+      miniSteps: makeTemplateSteps(['確認してほしい対象を1つに絞る', '相手に見てほしい観点を書く', '期限と返答方法を添えて送る']),
+      issue: { text: '相手が最短で判断できる問いは何か' },
+    },
+  },
+  {
+    id: 'meeting-follow',
+    title: '会議後フォロー',
+    description: '会議後の抜け漏れを防ぐ',
+    task: {
+      title: '会議後フォローを完了する',
+      memo: '誰に: 参加者\n何を: 決定事項と次アクション\nどの段階まで: 各担当が動ける状態まで\nどうする: 共有する',
+      priority: 'high',
+      miniSteps: makeTemplateSteps(['決定事項を3行で書く', '担当者と期限を入れる', '参加者に共有して確認を取る']),
+      issue: { text: '次に止まりそうな論点は何か' },
+    },
+  },
+  {
+    id: 'proposal-draft',
+    title: '企画作成',
+    description: '白紙の企画を小さく進める',
+    task: {
+      title: '企画の初稿を作る',
+      memo: '誰に: \n何を: 企画初稿\nどの段階まで: レビューに出せる状態まで\nどうする: 作成する',
+      priority: 'medium',
+      miniSteps: makeTemplateSteps(['目的と対象者を1文で書く', '解決する課題を3つ出す', '初稿を作ってレビュー依頼する']),
+      issue: { text: 'この企画が解く本質的な問いは何か' },
+    },
+  },
 ]
 
 // ============================================================
@@ -441,12 +490,13 @@ const makeNewTask = (): Task => ({
 
 interface TaskModalProps {
   initial: Task | null
+  isDraft?: boolean
   knownAssignees: string[]
   onSave: (t: Task) => void
   onClose: () => void
 }
 
-const TaskModal: React.FC<TaskModalProps> = ({ initial, knownAssignees, onSave, onClose }) => {
+const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAssignees, onSave, onClose }) => {
   const [form, setForm] = useState<Task>(initial ?? makeNewTask())
   const [assigneeMode, setAssigneeMode] = useState<'select'|'new'>(
     initial && !knownAssignees.includes(initial.assignee) ? 'new' : 'select'
@@ -474,7 +524,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, knownAssignees, onSave, 
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="font-semibold text-gray-800">{initial?'タスクを編集':'タスクを追加'}</h2>
+          <h2 className="font-semibold text-gray-800">{initial && !isDraft ? 'タスクを編集' : 'タスクを追加'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
         </div>
         <div className="px-6 py-5 space-y-4">
@@ -609,7 +659,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, knownAssignees, onSave, 
           <button onClick={()=>form.title.trim()&&onSave(normalizeTask({...form,assignee:effectiveAssignee}))}
             disabled={!form.title.trim()}
             className="px-4 py-2 text-sm bg-navy text-white rounded-md hover:bg-navy-dark disabled:opacity-40 disabled:cursor-not-allowed">
-            {initial?'保存':'追加'}
+            {initial && !isDraft ? '保存' : '追加'}
           </button>
         </div>
       </div>
@@ -1166,6 +1216,7 @@ const GistSettingsModal: React.FC<GistSettingsModalProps> = ({
 const HistoryModal: React.FC<{ history: HistoryEntry[]; onClose: () => void }> = ({
   history, onClose,
 }) => {
+  const [tab, setTab] = useState<'timeline' | 'analysis'>('timeline')
   // 日付ごとにグループ化
   const grouped = history.reduce<Record<string, HistoryEntry[]>>((acc, entry) => {
     // ローカル日付キー
@@ -1176,6 +1227,21 @@ const HistoryModal: React.FC<{ history: HistoryEntry[]; onClose: () => void }> =
   }, {})
 
   const dateKeys = Object.keys(grouped).sort().reverse()
+  const now = new Date()
+  const sevenDaysAgo = new Date(now)
+  sevenDaysAgo.setDate(now.getDate() - 6)
+  sevenDaysAgo.setHours(0, 0, 0, 0)
+  const recentHistory = history.filter(entry => new Date(entry.timestamp) >= sevenDaysAgo)
+  const completedCount = history.filter(entry => entry.action === 'completed').length
+  const recentCompletedCount = recentHistory.filter(entry => entry.action === 'completed').length
+  const todayAddedCount = history.filter(entry => entry.action === 'todayAdded').length
+  const uniqueTaskCount = new Set(history.map(entry => entry.taskId)).size
+  const actionCounts = history.reduce<Record<string, number>>((acc, entry) => {
+    const label = ACTION_CONFIG[entry.action].label
+    acc[label] = (acc[label] ?? 0) + 1
+    return acc
+  }, {})
+  const busiestKey = dateKeys.reduce((best, key) => grouped[key].length > (grouped[best]?.length ?? 0) ? key : best, dateKeys[0] ?? '')
 
   const fmtDateKey = (key: string) => {
     const today = todayStr()
@@ -1200,9 +1266,69 @@ const HistoryModal: React.FC<{ history: HistoryEntry[]; onClose: () => void }> =
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
         </div>
 
+        <div className="px-6 pt-4 flex gap-2 flex-shrink-0">
+          <button onClick={() => setTab('timeline')}
+            className={`text-xs px-3 py-1.5 rounded-md transition-colors ${tab === 'timeline' ? 'bg-navy text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            履歴
+          </button>
+          <button onClick={() => setTab('analysis')}
+            className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-md transition-colors ${tab === 'analysis' ? 'bg-navy text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            <TrendingUp size={13}/>分析
+          </button>
+        </div>
+
         {/* 履歴リスト */}
         <div className="overflow-y-auto flex-1 px-6 py-4">
-          {history.length === 0 ? (
+          {tab === 'analysis' ? (
+            history.length === 0 ? (
+              <p className="text-center text-sm text-gray-400 py-12">分析できる履歴はまだありません</p>
+            ) : (
+              <div className="space-y-4">
+                <div className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2 leading-relaxed">
+                  作業の軌跡から、完了ペースや着手傾向を見える化します。将来的には週次レポートや先延ばし傾向の提案に拡張できます。
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-lg border border-gray-100 p-3">
+                    <p className="text-xs text-gray-400">総完了数</p>
+                    <p className="text-2xl font-semibold text-navy mt-1">{completedCount}</p>
+                  </div>
+                  <div className="rounded-lg border border-gray-100 p-3">
+                    <p className="text-xs text-gray-400">直近7日の完了</p>
+                    <p className="text-2xl font-semibold text-navy mt-1">{recentCompletedCount}</p>
+                  </div>
+                  <div className="rounded-lg border border-gray-100 p-3">
+                    <p className="text-xs text-gray-400">今日の3つ投入</p>
+                    <p className="text-2xl font-semibold text-navy mt-1">{todayAddedCount}</p>
+                  </div>
+                  <div className="rounded-lg border border-gray-100 p-3">
+                    <p className="text-xs text-gray-400">登場タスク数</p>
+                    <p className="text-2xl font-semibold text-navy mt-1">{uniqueTaskCount}</p>
+                  </div>
+                </div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-lg border border-gray-100 p-4">
+                    <h3 className="text-sm font-semibold text-gray-800 mb-3">操作別の内訳</h3>
+                    <div className="space-y-2">
+                      {Object.entries(actionCounts).sort((a, b) => b[1] - a[1]).map(([label, count]) => (
+                        <div key={label} className="flex items-center justify-between gap-3 text-sm">
+                          <span className="text-gray-600">{label}</span>
+                          <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{count}件</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-gray-100 p-4">
+                    <h3 className="text-sm font-semibold text-gray-800 mb-3">進み方メモ</h3>
+                    <div className="space-y-2 text-sm text-gray-600 leading-relaxed">
+                      <p>一番動いた日: <span className="font-medium text-gray-800">{busiestKey ? fmtDateKey(busiestKey) : '-'}</span></p>
+                      <p>直近7日の操作: <span className="font-medium text-gray-800">{recentHistory.length}件</span></p>
+                      <p>完了に寄った作業が見えるほど、次週の「今日の3つ」を決めやすくなります。</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          ) : history.length === 0 ? (
             <p className="text-center text-sm text-gray-400 py-12">作業の軌跡はまだありません</p>
           ) : (
             <div className="space-y-5">
@@ -1298,6 +1424,58 @@ const TeachingsModal: React.FC<{onClose:()=>void}> = ({onClose}) => (
 // Dialog
 // ============================================================
 
+interface TemplatesModalProps {
+  onUse: (template: TaskTemplate) => void
+  onClose: () => void
+}
+
+const TemplatesModal: React.FC<TemplatesModalProps> = ({ onUse, onClose }) => (
+  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[84vh] flex flex-col">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <ClipboardList size={18} className="text-navy"/>
+          <h2 className="font-semibold text-gray-800">タスクテンプレート</h2>
+          <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">有料機能イメージ</span>
+        </div>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
+      </div>
+      <div className="overflow-y-auto flex-1 px-6 py-4 space-y-3">
+        <p className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2 leading-relaxed">
+          よくある仕事を、完了条件・ミニステップ・イシュー付きで開始できます。将来的にはAIで職種別テンプレートを自動生成する想定です。
+        </p>
+        {TASK_TEMPLATES.map(template => (
+          <div key={template.id} className="border border-gray-100 rounded-lg p-4 bg-white">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-gray-800">{template.title}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{template.description}</p>
+              </div>
+              <button onClick={() => onUse(template)}
+                className="flex-shrink-0 text-xs px-3 py-1.5 rounded-md bg-navy text-white hover:bg-navy-dark">
+                使う
+              </button>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {template.task.miniSteps.map((step, i) => (
+                <div key={`${template.id}-${i}`} className="text-xs bg-blue-50 text-blue-700 rounded px-2 py-2 leading-relaxed">
+                  {i + 1}. {step.text}
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-amber-800 bg-amber-50 rounded px-3 py-2">
+              Issue: {template.task.issue.text}
+            </p>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-end px-6 py-4 border-t border-gray-100 flex-shrink-0">
+        <button onClick={onClose} className="px-4 py-2 text-sm bg-navy text-white rounded-md hover:bg-navy-dark">閉じる</button>
+      </div>
+    </div>
+  </div>
+)
+
 interface DialogProps {
   icon:React.ReactNode; iconColor:string; title:string; body:string
   confirmLabel:string; confirmClass:string; onConfirm:()=>void; onCancel:()=>void
@@ -1336,6 +1514,7 @@ export default function App() {
   const [todayWarn,      setTodayWarn]      = useState(false)
   const [showTeachings,  setShowTeachings]  = useState(false)
   const [showHistory,    setShowHistory]    = useState(false)
+  const [showTemplates,  setShowTemplates]  = useState(false)
   const [showGistSettings, setShowGistSettings] = useState(false)
 
   // settingsRef: sync effect 内で最新の settings を参照するため
@@ -1479,6 +1658,17 @@ export default function App() {
     addHistory(nextPinned ? 'pinned' : 'unpinned', task)
   }
 
+  const handleUseTemplate = (template: TaskTemplate) => {
+    const task = normalizeTask({
+      ...makeNewTask(),
+      ...template.task,
+      miniSteps: template.task.miniSteps.map(step => ({ ...step, id: genId(), done: false })),
+    })
+    setEditTask(task)
+    setShowTemplates(false)
+    setShowModal(true)
+  }
+
   const handleStepToggle = (taskId: string, stepId: string) => {
     const task = tasks.find(t => t.id === taskId); if (!task) return
     const steps = normalizeMiniSteps(task.miniSteps)
@@ -1565,6 +1755,10 @@ export default function App() {
                   {history.length > 99 ? '99+' : history.length}
                 </span>
               )}
+            </button>
+            <button onClick={()=>setShowTemplates(true)}
+              className="flex items-center gap-1.5 text-sm bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-md transition-colors" title="タスクテンプレート">
+              <ClipboardList size={14}/><span className="hidden md:inline">テンプレ</span>
             </button>
             <div className="flex rounded-md overflow-hidden border border-white/20">
               {([
@@ -1659,9 +1853,11 @@ export default function App() {
       {/* Modals */}
       {showModal && (
         <TaskModal initial={editTask} knownAssignees={knownAssignees}
+          isDraft={!!editTask && !tasks.some(t=>t.id===editTask.id)}
           onSave={handleSave} onClose={()=>{setShowModal(false);setEditTask(null)}}/>
       )}
       {showTeachings && <TeachingsModal onClose={()=>setShowTeachings(false)}/>}
+      {showTemplates && <TemplatesModal onUse={handleUseTemplate} onClose={()=>setShowTemplates(false)}/>}
       {showGistSettings && (
         <GistSettingsModal
           settings={settings}
