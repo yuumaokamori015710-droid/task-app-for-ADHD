@@ -624,11 +624,12 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, knownAssignees, onSave, 
 interface TaskCardProps {
   task: Task
   onComplete:(id:string)=>void; onToday:(id:string)=>void; onPin:(id:string)=>void
+  onStepToggle:(taskId:string, stepId:string)=>void
   onEdit:(t:Task)=>void; onDelete:(id:string)=>void
   hideAssignee?: boolean
 }
 
-const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onPin,onEdit,onDelete,hideAssignee=false}) => {
+const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onPin,onStepToggle,onEdit,onDelete,hideAssignee=false}) => {
   const pc         = PRIORITY_CONFIG[task.priority]
   const cond       = fmtCondition(task)
   const overdue    = !task.completed && isOverdue(task.dueDate)
@@ -718,11 +719,16 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onPin,onEdit
             <div className="space-y-0.5">
               {visibleSteps.map((step, i) => (
                 <div key={step.id} className="flex items-start gap-1.5">
-                  <span className={`mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
-                    step.done ? 'bg-navy border-navy text-white' : 'border-blue-300 bg-white'
-                  }`}>
+                  <button
+                    type="button"
+                    onClick={() => onStepToggle(task.id, step.id)}
+                    title={step.done ? 'ステップを未完了にする' : 'ステップを完了にする'}
+                    className={`mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                      step.done ? 'bg-navy border-navy text-white' : 'border-blue-300 bg-white hover:border-navy'
+                    }`}
+                  >
                     {step.done && <Check size={9}/>}
-                  </span>
+                  </button>
                   <span className={step.done ? 'line-through opacity-60' : ''}>
                     {i + 1}. {step.text}
                   </span>
@@ -757,13 +763,14 @@ interface AssigneeColsProps {
   onReorderTasks: (tasks: Task[]) => void
   onReorderColumns: (order: string[]) => void
   onComplete:(id:string)=>void; onToday:(id:string)=>void; onPin:(id:string)=>void
+  onStepToggle:(taskId:string, stepId:string)=>void
   onEdit:(t:Task)=>void; onDelete:(id:string)=>void
 }
 
 const AssigneeCols: React.FC<AssigneeColsProps> = ({
   tasks, groupMode, knownAssignees, columnOrder,
   onReorderTasks, onReorderColumns,
-  onComplete, onToday, onPin, onEdit, onDelete,
+  onComplete, onToday, onPin, onStepToggle, onEdit, onDelete,
 }) => {
   const [dragTaskId,  setDragTaskId]  = useState<string|null>(null)
   const [dragColName, setDragColName] = useState<string|null>(null)
@@ -922,6 +929,7 @@ const AssigneeCols: React.FC<AssigneeColsProps> = ({
                       >
                         <TaskCard task={task} hideAssignee={groupMode === 'assignee'}
                           onComplete={onComplete} onToday={onToday} onPin={onPin}
+                          onStepToggle={onStepToggle}
                           onEdit={onEdit} onDelete={onDelete} />
                       </div>
 
@@ -1471,6 +1479,18 @@ export default function App() {
     addHistory(nextPinned ? 'pinned' : 'unpinned', task)
   }
 
+  const handleStepToggle = (taskId: string, stepId: string) => {
+    const task = tasks.find(t => t.id === taskId); if (!task) return
+    const steps = normalizeMiniSteps(task.miniSteps)
+    const step = steps.find(s => s.id === stepId); if (!step) return
+    const nextDone = !step.done
+    setTasks(prev => prev.map(t => t.id === taskId ? {
+      ...t,
+      miniSteps: normalizeMiniSteps(t.miniSteps).map(s => s.id === stepId ? { ...s, done: nextDone } : s),
+    } : t))
+    addHistory('updated', task, `ステップ${nextDone ? '完了' : '未完了'}: ${step.text}`)
+  }
+
   const handleEdit = (task: Task) => { setEditTask(task); setShowModal(true) }
 
   const handleDeleteConfirm = () => {
@@ -1492,6 +1512,7 @@ export default function App() {
 
   const cardProps = {
     onComplete:handleComplete, onToday:handleToday, onPin:handlePin,
+    onStepToggle:handleStepToggle,
     onEdit:handleEdit, onDelete:(id:string)=>setDeleteId(id),
   }
 
