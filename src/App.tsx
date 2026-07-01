@@ -1850,6 +1850,15 @@ export default function App() {
         )}
       </main>
 
+      <footer className="max-w-7xl mx-auto px-4 pb-8 text-xs text-gray-400">
+        <div className="border-t border-gray-200 pt-4 flex flex-wrap gap-x-4 gap-y-2">
+          <a href="./guides.html" className="hover:text-navy">使い方ガイド</a>
+          <a href="./privacy.html" className="hover:text-navy">プライバシーポリシー</a>
+          <a href="./terms.html" className="hover:text-navy">利用規約</a>
+          <a href="./contact.html" className="hover:text-navy">お問い合わせ</a>
+        </div>
+      </footer>
+
       {/* Modals */}
       {showModal && (
         <TaskModal initial={editTask} knownAssignees={knownAssignees}
