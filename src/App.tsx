@@ -696,16 +696,16 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onPin,onStep
 
       {/* 今日締め切りバナー */}
       {todayDue && (
-        <div className="flex items-center gap-2 bg-red-500 text-white text-sm font-bold px-4 py-2">
+        <div className="flex items-center gap-1.5 bg-red-500 text-white text-xs font-bold px-3 py-1.5">
           <span className="animate-bounce inline-block text-base">🔥</span>
           今日が締め切りです！
           <span className="animate-bounce inline-block text-base">🔥</span>
         </div>
       )}
 
-      <div className="bg-white px-4 py-3">
+      <div className="bg-white px-3 py-2.5">
         {/* 上段：チェックボックス ＋ タイトル等 ＋ アクション */}
-        <div className="flex gap-3 items-start">
+        <div className="flex gap-2 items-start">
           <button onClick={()=>onComplete(task.id)}
             className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
               task.completed ? 'bg-navy border-navy' : 'border-gray-300 hover:border-navy'
@@ -714,13 +714,13 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onPin,onStep
           </button>
 
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1 flex-wrap">
               <button onClick={()=>onPin(task.id)}
                 title={task.pinned?'ピン留めを外す':'ピン留めする'}
                 className={`p-0.5 rounded transition-colors ${task.pinned?'text-sky-600 bg-sky-50':'text-gray-300 hover:text-sky-600 hover:bg-sky-50'}`}>
                 <Pin size={13}/>
               </button>
-              <span className={`text-sm font-medium ${task.completed?'line-through text-gray-400':todayDue?'text-red-700':'text-gray-800'}`}>
+              <span className={`text-[13px] font-medium leading-snug ${task.completed?'line-through text-gray-400':todayDue?'text-red-700':'text-gray-800'}`}>
                 {task.title}
               </span>
               <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${pc.badge}`}>{pc.label}</span>
@@ -730,7 +730,7 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onPin,onStep
             </div>
             <p className="text-xs text-gray-400 mt-0.5 truncate">完了条件: {cond}</p>
             {task.issue.text && (
-              <div className="mt-2 text-xs bg-amber-50 text-amber-800 rounded px-3 py-2 leading-relaxed">
+              <div className="mt-1.5 text-xs bg-amber-50 text-amber-800 rounded px-2 py-1.5 leading-relaxed">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-semibold flex-shrink-0">Issue</span>
                   <span className="truncate flex-1">{task.issue.text}</span>
@@ -750,10 +750,10 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onPin,onStep
             )}
           </div>
 
-          <div className="flex items-center gap-1 flex-shrink-0">
+          <div className="flex items-center gap-0.5 flex-shrink-0">
             <button onClick={()=>onToday(task.id)}
               title={task.isToday?'今日の3つから外す':'今日の3つに追加'}
-              className={`text-xs px-2 py-1 rounded transition-colors ${task.isToday?'bg-navy text-white':'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+              className={`text-xs px-1.5 py-1 rounded transition-colors ${task.isToday?'bg-navy text-white':'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
               今日
             </button>
             <button onClick={()=>onEdit(task)} className="p-1 text-gray-400 hover:text-gray-700"><Pencil size={14}/></button>
@@ -762,7 +762,7 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onPin,onStep
         </div>
 
         {visibleSteps.length > 0 && (
-          <div className="mt-3 rounded px-3 py-2 text-xs leading-relaxed bg-blue-50 text-blue-700">
+          <div className="mt-2.5 rounded px-2 py-1.5 text-xs leading-relaxed bg-blue-50 text-blue-700">
             <div className="font-semibold mb-1">
               ステップ完了 {completedStepCount}/{visibleSteps.length}
             </div>
@@ -803,7 +803,7 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onPin,onStep
 // AssigneeColumns — DnD対応（列・カード両方）
 // ============================================================
 
-const COL_W = 360  // 列幅 (px)
+const COL_W = 240  // 5列を一画面で見やすくする列幅 (px)
 
 interface AssigneeColsProps {
   tasks: Task[]
@@ -907,7 +907,7 @@ const AssigneeCols: React.FC<AssigneeColsProps> = ({
 
   return (
     <div className="overflow-x-auto pb-4">
-      <div className="flex gap-4" style={{ minWidth: 'max-content' }}>
+      <div className="flex gap-3" style={{ minWidth: 'max-content' }}>
         {cols.map(({ key, label, tasks: colTasks }) => {
           const active       = colTasks.filter(t => !t.completed).length
           const isSelf       = groupMode === 'assignee' && key === DEFAULT_ASSIGNEE
@@ -932,7 +932,7 @@ const AssigneeCols: React.FC<AssigneeColsProps> = ({
                 onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDropColName(key) }}
                 onDrop={e => { e.stopPropagation(); dropOnColHeader(key) }}
                 className={[
-                  'flex items-center justify-between px-3 py-2.5 rounded-lg mb-2 select-none transition-all',
+                  'flex items-center justify-between px-2.5 py-2 rounded-lg mb-2 select-none transition-all',
                   groupMode === 'assignee' ? 'cursor-grab' : '',
                   isPriority ? PRIORITY_CONFIG[key as Priority].badge : isDue ? 'bg-sky-50 border border-sky-200 text-sky-700' : isSelf ? 'bg-navy/10' : 'bg-amber-50 border border-amber-200',
                   isColTarget ? 'ring-2 ring-navy shadow-md' : '',
