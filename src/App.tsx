@@ -803,7 +803,7 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onPin,onStep
 // AssigneeColumns — DnD対応（列・カード両方）
 // ============================================================
 
-const COL_W = 240  // 5列を一画面で見やすくする列幅 (px)
+const COL_W = 300  // 広いPC画面で5列を見つつカード幅も確保する列幅 (px)
 
 interface AssigneeColsProps {
   tasks: Task[]
@@ -1713,7 +1713,7 @@ export default function App() {
 
       {/* ===== Header ===== */}
       <header className="bg-navy text-white px-6 py-4 shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+        <div className="max-w-[1800px] mx-auto flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-lg font-semibold tracking-wide">ADHD専用タスク管理</h1>
             <p className="text-xs text-blue-200 mt-0.5">{dateLabel}</p>
@@ -1789,7 +1789,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+      <main className="max-w-[1800px] mx-auto px-4 xl:px-6 2xl:px-8 py-6 space-y-6">
 
         {viewMode === 'gantt' && (
           <section>
@@ -1850,7 +1850,7 @@ export default function App() {
         )}
       </main>
 
-      <footer className="max-w-7xl mx-auto px-4 pb-8 text-xs text-gray-400">
+      <footer className="max-w-[1800px] mx-auto px-4 xl:px-6 2xl:px-8 pb-8 text-xs text-gray-400">
         <div className="border-t border-gray-200 pt-4 flex flex-wrap gap-x-4 gap-y-2">
           <a href="./guides.html" className="hover:text-navy">使い方ガイド</a>
           <a href="./privacy.html" className="hover:text-navy">プライバシーポリシー</a>
