@@ -4,7 +4,7 @@ import {
   Plus, Pencil, Trash2, Check, Calendar, Download,
   AlertTriangle, X, BookOpen, Users, FileSpreadsheet, List, BarChart2,
   History, RotateCcw, Star, StarOff,
-  Cloud, CloudOff, Eye, EyeOff, Pin, PinOff, ClipboardList, TrendingUp,
+  Cloud, CloudOff, Eye, EyeOff, Pin, PinOff, ClipboardList, TrendingUp, GripVertical,
 } from 'lucide-react'
 
 // ============================================================
@@ -498,6 +498,7 @@ interface TaskModalProps {
 
 const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAssignees, onSave, onClose }) => {
   const [form, setForm] = useState<Task>(initial ?? makeNewTask())
+  const [dragStepId, setDragStepId] = useState<string | null>(null)
   const [assigneeMode, setAssigneeMode] = useState<'select'|'new'>(
     initial && !knownAssignees.includes(initial.assignee) ? 'new' : 'select'
   )
@@ -516,6 +517,18 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
     setForm(p => {
       const next = normalizeMiniSteps(p.miniSteps).filter(s => s.id !== id)
       return { ...p, miniSteps: normalizeMiniSteps(next) }
+    })
+  const reorderMiniStep = (targetId: string) =>
+    setForm(p => {
+      if (!dragStepId || dragStepId === targetId) return p
+      const steps = normalizeMiniSteps(p.miniSteps)
+      const from = steps.findIndex(s => s.id === dragStepId)
+      const to = steps.findIndex(s => s.id === targetId)
+      if (from < 0 || to < 0) return p
+      const next = [...steps]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return { ...p, miniSteps: next }
     })
   const setIssue = (patch: Partial<Issue>) =>
     setForm(p => ({ ...p, issue: { ...normalizeIssue(p.issue), ...patch } }))
@@ -594,7 +607,17 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
             </div>
             <div className="space-y-2">
               {miniSteps.map((step, i) => (
-                <div key={step.id} className="flex items-center gap-2">
+                <div key={step.id}
+                  onDragOver={e=>e.preventDefault()}
+                  onDrop={()=>{reorderMiniStep(step.id); setDragStepId(null)}}
+                  className={`flex items-center gap-2 rounded ${dragStepId === step.id ? 'opacity-50' : ''}`}>
+                  <span draggable
+                    onDragStart={()=>setDragStepId(step.id)}
+                    onDragEnd={()=>setDragStepId(null)}
+                    title="ドラッグして並び替え"
+                    className="cursor-grab text-gray-300 hover:text-gray-500">
+                    <GripVertical size={15}/>
+                  </span>
                   <button type="button" onClick={()=>setMiniStep(step.id, { done: !step.done })}
                     className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
                       step.done ? 'bg-navy border-navy' : 'border-gray-300 hover:border-navy'
@@ -673,13 +696,19 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
 
 interface TaskCardProps {
   task: Task
+  knownAssignees: string[]
   onComplete:(id:string)=>void; onToday:(id:string)=>void; onPin:(id:string)=>void
+  onQuickUpdate:(id:string, patch:Partial<Task>, detail:string)=>void
   onStepToggle:(taskId:string, stepId:string)=>void
+  onStepReorder:(taskId:string, draggedStepId:string, targetStepId:string)=>void
   onEdit:(t:Task)=>void; onDelete:(id:string)=>void
   hideAssignee?: boolean
 }
 
-const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onPin,onStepToggle,onEdit,onDelete,hideAssignee=false}) => {
+const TaskCard: React.FC<TaskCardProps> = ({
+  task, knownAssignees,
+  onComplete, onToday, onPin, onQuickUpdate, onStepToggle, onStepReorder, onEdit, onDelete, hideAssignee=false,
+}) => {
   const pc         = PRIORITY_CONFIG[task.priority]
   const cond       = fmtCondition(task)
   const overdue    = !task.completed && isOverdue(task.dueDate)
@@ -723,10 +752,35 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onPin,onStep
               <span className={`text-[13px] font-medium leading-snug ${task.completed?'line-through text-gray-400':todayDue?'text-red-700':'text-gray-800'}`}>
                 {task.title}
               </span>
-              <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${pc.badge}`}>{pc.label}</span>
+              <select value={task.priority}
+                title="優先度を変更"
+                onMouseDown={e=>e.stopPropagation()}
+                onClick={e=>e.stopPropagation()}
+                onChange={e=>onQuickUpdate(task.id, { priority:e.target.value as Priority }, `優先度を${PRIORITY_CONFIG[e.target.value as Priority].label}に変更`)}
+                className={`text-xs px-1 py-0.5 rounded border-0 focus:outline-none focus:ring-1 focus:ring-navy ${pc.badge}`}>
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+              </select>
               {!hideAssignee && task.assignee!==DEFAULT_ASSIGNEE && (
                 <span className="text-xs px-1.5 py-0.5 rounded bg-navy/10 text-navy flex-shrink-0">→ {task.assignee}</span>
               )}
+            </div>
+            <div className="mt-1 grid gap-1 sm:grid-cols-2">
+              <select value={task.assignee}
+                title="宛先を変更"
+                onMouseDown={e=>e.stopPropagation()}
+                onClick={e=>e.stopPropagation()}
+                onChange={e=>onQuickUpdate(task.id, { assignee:e.target.value }, `宛先を${e.target.value}に変更`)}
+                className="min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-navy">
+                {knownAssignees.map(a=><option key={a} value={a}>{a}</option>)}
+              </select>
+              <input type="date" value={task.dueDate}
+                title="期限日を変更"
+                onMouseDown={e=>e.stopPropagation()}
+                onClick={e=>e.stopPropagation()}
+                onChange={e=>onQuickUpdate(task.id, { dueDate:e.target.value }, e.target.value ? `期限日を${fmtDate(e.target.value)}に変更` : '期限日を解除')}
+                className="min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-navy"/>
             </div>
             <p className="text-xs text-gray-400 mt-0.5 truncate">完了条件: {cond}</p>
             {task.issue.text && (
@@ -768,10 +822,16 @@ const TaskCard: React.FC<TaskCardProps> = ({task,onComplete,onToday,onPin,onStep
             </div>
             <div className="space-y-0.5">
               {visibleSteps.map((step, i) => (
-                <div key={step.id} className="flex items-start gap-1.5">
+                <div key={step.id}
+                  draggable
+                  onDragStart={e=>{e.stopPropagation(); e.dataTransfer.setData('text/plain', step.id)}}
+                  onDragOver={e=>{e.preventDefault(); e.stopPropagation()}}
+                  onDrop={e=>{e.preventDefault(); e.stopPropagation(); onStepReorder(task.id, e.dataTransfer.getData('text/plain'), step.id)}}
+                  className="flex items-start gap-1.5 cursor-grab">
                   <button
                     type="button"
-                    onClick={() => onStepToggle(task.id, step.id)}
+                    onMouseDown={e=>e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onStepToggle(task.id, step.id) }}
                     title={step.done ? 'ステップを未完了にする' : 'ステップを完了にする'}
                     className={`mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
                       step.done ? 'bg-navy border-navy text-white' : 'border-blue-300 bg-white hover:border-navy'
@@ -813,14 +873,16 @@ interface AssigneeColsProps {
   onReorderTasks: (tasks: Task[]) => void
   onReorderColumns: (order: string[]) => void
   onComplete:(id:string)=>void; onToday:(id:string)=>void; onPin:(id:string)=>void
+  onQuickUpdate:(id:string, patch:Partial<Task>, detail:string)=>void
   onStepToggle:(taskId:string, stepId:string)=>void
+  onStepReorder:(taskId:string, draggedStepId:string, targetStepId:string)=>void
   onEdit:(t:Task)=>void; onDelete:(id:string)=>void
 }
 
 const AssigneeCols: React.FC<AssigneeColsProps> = ({
   tasks, groupMode, knownAssignees, columnOrder,
   onReorderTasks, onReorderColumns,
-  onComplete, onToday, onPin, onStepToggle, onEdit, onDelete,
+  onComplete, onToday, onPin, onQuickUpdate, onStepToggle, onStepReorder, onEdit, onDelete,
 }) => {
   const [dragTaskId,  setDragTaskId]  = useState<string|null>(null)
   const [dragColName, setDragColName] = useState<string|null>(null)
@@ -977,9 +1039,9 @@ const AssigneeCols: React.FC<AssigneeColsProps> = ({
                         onDrop={e => { e.stopPropagation(); dropOnTask(task.id, key) }}
                         className={`transition-opacity cursor-grab ${isDragging ? 'opacity-25' : ''}`}
                       >
-                        <TaskCard task={task} hideAssignee={groupMode === 'assignee'}
+                        <TaskCard task={task} knownAssignees={knownAssignees} hideAssignee={groupMode === 'assignee'}
                           onComplete={onComplete} onToday={onToday} onPin={onPin}
-                          onStepToggle={onStepToggle}
+                          onQuickUpdate={onQuickUpdate} onStepToggle={onStepToggle} onStepReorder={onStepReorder}
                           onEdit={onEdit} onDelete={onDelete} />
                       </div>
 
@@ -1620,8 +1682,9 @@ export default function App() {
   const cardVisibleTasks = tasks.filter(t => !isHiddenCompletedTask(t))
   const todayTasks       = sortTasksForWork(cardVisibleTasks.filter(t=>t.isToday))
   const todayActiveCount = todayTasks.filter(t=>!t.completed).length
+  const todayCompletedTasks = sortTasksForWork(cardVisibleTasks.filter(t=>t.completed && t.completedAt?.startsWith(todayStr())))
 
-  const allSectionTasks = sortTasksForWork(cardVisibleTasks.filter(t=>!t.isToday))
+  const allSectionTasks = sortTasksForWork(cardVisibleTasks.filter(t=>!t.isToday && !todayCompletedTasks.some(done=>done.id===t.id)))
 
   const handleSave = (task: Task) => {
     const isNew = !tasks.find(t => t.id === task.id)
@@ -1638,7 +1701,10 @@ export default function App() {
     const task = tasks.find(t => t.id === id); if (!task) return
     const nowCompleted = !task.completed
     setTasks(prev => prev.map(t => t.id !== id ? t : {
-      ...t, completed: nowCompleted, completedAt: nowCompleted ? new Date().toISOString() : null,
+      ...t,
+      completed: nowCompleted,
+      completedAt: nowCompleted ? new Date().toISOString() : null,
+      isToday: nowCompleted ? false : t.isToday,
     }))
     addHistory(nowCompleted ? 'completed' : 'uncompleted', task)
   }
@@ -1656,6 +1722,13 @@ export default function App() {
     const nextPinned = !task.pinned
     setTasks(prev => prev.map(t => t.id === id ? { ...t, pinned: nextPinned } : t))
     addHistory(nextPinned ? 'pinned' : 'unpinned', task)
+  }
+
+  const handleQuickUpdate = (id: string, patch: Partial<Task>, detail: string) => {
+    const task = tasks.find(t => t.id === id); if (!task) return
+    const nextTask = normalizeTask({ ...task, ...patch })
+    setTasks(prev => prev.map(t => t.id === id ? nextTask : t))
+    addHistory('updated', nextTask, detail)
   }
 
   const handleUseTemplate = (template: TaskTemplate) => {
@@ -1681,6 +1754,20 @@ export default function App() {
     addHistory('updated', task, `ステップ${nextDone ? '完了' : '未完了'}: ${step.text}`)
   }
 
+  const handleStepReorder = (taskId: string, draggedStepId: string, targetStepId: string) => {
+    if (!draggedStepId || draggedStepId === targetStepId) return
+    const task = tasks.find(t => t.id === taskId); if (!task) return
+    const steps = normalizeMiniSteps(task.miniSteps)
+    const from = steps.findIndex(s => s.id === draggedStepId)
+    const to = steps.findIndex(s => s.id === targetStepId)
+    if (from < 0 || to < 0) return
+    const nextSteps = [...steps]
+    const [moved] = nextSteps.splice(from, 1)
+    nextSteps.splice(to, 0, moved)
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, miniSteps: nextSteps } : t))
+    addHistory('updated', task, `ステップ並び替え: ${moved.text || '未入力ステップ'}`)
+  }
+
   const handleEdit = (task: Task) => { setEditTask(task); setShowModal(true) }
 
   const handleDeleteConfirm = () => {
@@ -1702,7 +1789,7 @@ export default function App() {
 
   const cardProps = {
     onComplete:handleComplete, onToday:handleToday, onPin:handlePin,
-    onStepToggle:handleStepToggle,
+    onQuickUpdate:handleQuickUpdate, onStepToggle:handleStepToggle, onStepReorder:handleStepReorder,
     onEdit:handleEdit, onDelete:(id:string)=>setDeleteId(id),
   }
 
@@ -1813,9 +1900,26 @@ export default function App() {
               </div>
               {todayTasks.length===0
                 ? <div className="text-center py-6 text-gray-400 text-sm">タスクカードの「今日」ボタンで追加できます</div>
-                : <div className="grid gap-3 md:grid-cols-3">{todayTasks.map(t=><TaskCard key={t.id} task={t} {...cardProps}/>)}</div>
+                : <div className="grid gap-3 md:grid-cols-3">{todayTasks.map(t=><TaskCard key={t.id} task={t} knownAssignees={knownAssignees} {...cardProps}/>)}</div>
               }
             </section>
+
+            {todayCompletedTasks.length > 0 && (
+              <section className="bg-white border border-gray-100 rounded-lg p-5">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h2 className="font-semibold text-gray-800">今日消化したタスク</h2>
+                    <p className="text-xs text-gray-500 mt-0.5">今日チェックを入れて完了したタスク</p>
+                  </div>
+                  <span className="text-sm font-medium px-2.5 py-1 rounded-full flex-shrink-0 bg-green-50 text-green-700">
+                    {todayCompletedTasks.length}件
+                  </span>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
+                  {todayCompletedTasks.map(t=><TaskCard key={t.id} task={t} knownAssignees={knownAssignees} {...cardProps}/>)}
+                </div>
+              </section>
+            )}
 
             {/* 全タスク — 宛先別カラム・フル幅 */}
             <section>
