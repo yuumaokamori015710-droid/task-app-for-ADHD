@@ -327,8 +327,8 @@ const getCurrentMiniStep = (task: Task) => {
 }
 
 const sortTasksForWork = (items: Task[]) => [...items].sort((a, b) => {
-  if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
   if (a.completed !== b.completed) return a.completed ? 1 : -1
+  if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
   const aDue = a.dueDate || '9999-12-31'
   const bDue = b.dueDate || '9999-12-31'
   if (aDue !== bDue) return aDue.localeCompare(bDue)
@@ -448,8 +448,33 @@ const toExportRow = (t: Task) => ({
   })(),
   'イシュー':    t.issue.text,
   'イシュー観点': ISSUE_CRITERIA.join(' / '),
+  'ミニステップ一覧': normalizeMiniSteps(t.miniSteps)
+    .filter(step => step.text.trim())
+    .map((step, i) => `${i + 1}. ${step.done ? '[完了]' : '[未完了]'} ${step.text}`)
+    .join('\n'),
   '作成日':      t.createdAt.split('T')[0],
 })
+
+const toStepExportRows = (tasks: Task[]) => tasks.flatMap(t =>
+  normalizeMiniSteps(t.miniSteps)
+    .filter(step => step.text.trim())
+    .map((step, i) => ({
+      'タスクID': t.id,
+      'タスク': t.title,
+      '宛先': t.assignee,
+      'ステップ番号': i + 1,
+      'ステップ': step.text,
+      '完了': step.done ? '完了' : '未完了',
+    }))
+)
+
+const toHistoryExportRows = (history: HistoryEntry[]) => history.map(h => ({
+  '日時': fmtDateTime(h.timestamp),
+  '操作': ACTION_CONFIG[h.action].label,
+  'タスクID': h.taskId,
+  'タスク': h.taskTitle,
+  '詳細': h.detail ?? '',
+}))
 
 const handleExportCSV = (tasks: Task[]) => {
   const rows = tasks.map(toExportRow)
@@ -462,18 +487,24 @@ const handleExportCSV = (tasks: Task[]) => {
   URL.revokeObjectURL(url)
 }
 
-const handleExportExcel = (tasks: Task[]) => {
-  const rows = tasks.map(toExportRow)
-  const ws = XLSX.utils.json_to_sheet(rows)
-  // 列幅設定
-  ws['!cols'] = [
+const handleExportExcel = (tasks: Task[], history: HistoryEntry[]) => {
+  const taskRows = tasks.map(toExportRow)
+  const stepRows = toStepExportRows(tasks)
+  const historyRows = toHistoryExportRows(history)
+  const taskSheet = XLSX.utils.json_to_sheet(taskRows)
+  taskSheet['!cols'] = [
     {wch:32},{wch:12},{wch:40},{wch:8},{wch:12},{wch:8},
-    {wch:8},{wch:20},{wch:10},{wch:48},{wch:32},{wch:40},{wch:24},{wch:12},
+    {wch:8},{wch:20},{wch:10},{wch:48},{wch:32},{wch:40},{wch:24},{wch:48},{wch:12},
   ]
-  // ヘッダー行のスタイル（背景色）
+  const stepSheet = XLSX.utils.json_to_sheet(stepRows)
+  stepSheet['!cols'] = [{wch:22},{wch:32},{wch:12},{wch:10},{wch:48},{wch:10}]
+  const historySheet = XLSX.utils.json_to_sheet(historyRows)
+  historySheet['!cols'] = [{wch:20},{wch:14},{wch:22},{wch:32},{wch:48}]
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'タスク一覧')
-  XLSX.writeFile(wb, `neumann-tasks-${todayStr()}.xlsx`)
+  XLSX.utils.book_append_sheet(wb, taskSheet, 'タスク一覧')
+  XLSX.utils.book_append_sheet(wb, stepSheet, 'ミニステップ')
+  XLSX.utils.book_append_sheet(wb, historySheet, '操作履歴')
+  XLSX.writeFile(wb, `adhd-task-export-${todayStr()}.xlsx`)
 }
 
 // ============================================================
@@ -1860,7 +1891,7 @@ export default function App() {
               ))}
             </div>
             {/* エクスポート */}
-            <button onClick={()=>handleExportExcel(tasks)}
+            <button onClick={()=>handleExportExcel(tasks, history)}
               className="flex items-center gap-1.5 text-sm bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-md transition-colors" title="Excelエクスポート">
               <FileSpreadsheet size={14}/><span className="hidden sm:inline">Excel</span>
             </button>
