@@ -22,16 +22,11 @@ interface MiniStep {
   done: boolean
 }
 
-interface Issue {
-  text: string
-}
-
 interface Task {
   id: string
   title: string
   memo: string              // フリーメモ
   dueDate: string           // 'YYYY-MM-DD'
-  dueTime: '' | 'AM' | 'PM'
   priority: Priority
   completed: boolean
   completedAt: string | null  // 完了日時（ISO）
@@ -39,7 +34,6 @@ interface Task {
   pinned: boolean
   assignee: string
   miniSteps: MiniStep[]
-  issue: Issue
   createdAt: string
 }
 
@@ -77,7 +71,7 @@ interface TaskTemplate {
   id: string
   title: string
   description: string
-  task: Pick<Task, 'title' | 'memo' | 'priority' | 'miniSteps' | 'issue'>
+  task: Pick<Task, 'title' | 'memo' | 'priority' | 'miniSteps'>
 }
 
 // ============================================================
@@ -142,7 +136,6 @@ const TASK_TEMPLATES: TaskTemplate[] = [
       memo: '誰に: \n何を: \nどの段階まで: 判断できる状態まで\nどうする: 確認依頼する',
       priority: 'medium',
       miniSteps: makeTemplateSteps(['確認してほしい対象を1つに絞る', '相手に見てほしい観点を書く', '期限と返答方法を添えて送る']),
-      issue: { text: '相手が最短で判断できる問いは何か' },
     },
   },
   {
@@ -154,7 +147,6 @@ const TASK_TEMPLATES: TaskTemplate[] = [
       memo: '誰に: 参加者\n何を: 決定事項と次アクション\nどの段階まで: 各担当が動ける状態まで\nどうする: 共有する',
       priority: 'high',
       miniSteps: makeTemplateSteps(['決定事項を3行で書く', '担当者と期限を入れる', '参加者に共有して確認を取る']),
-      issue: { text: '次に止まりそうな論点は何か' },
     },
   },
   {
@@ -166,7 +158,6 @@ const TASK_TEMPLATES: TaskTemplate[] = [
       memo: '誰に: \n何を: 企画初稿\nどの段階まで: レビューに出せる状態まで\nどうする: 作成する',
       priority: 'medium',
       miniSteps: makeTemplateSteps(['目的と対象者を1文で書く', '解決する課題を3つ出す', '初稿を作ってレビュー依頼する']),
-      issue: { text: 'この企画が解く本質的な問いは何か' },
     },
   },
 ]
@@ -286,27 +277,11 @@ const normalizeMiniSteps = (steps: unknown): MiniStep[] => {
   return list
 }
 
-const ISSUE_CRITERIA = [
-  '本質的な問い',
-  '深い仮説',
-  '答えが出せること',
-]
-
-const emptyIssue = (): Issue => ({ text: '' })
-
-const normalizeIssue = (issue: unknown): Issue => {
-  const raw = (issue ?? {}) as Partial<Issue>
-  return {
-    text: raw.text ?? '',
-  }
-}
-
 const normalizeTask = (t: Partial<Task>): Task => ({
   id: t.id ?? genId(),
   title: t.title ?? '',
   memo: t.memo ?? '',
   dueDate: t.dueDate ?? '',
-  dueTime: t.dueTime ?? '',
   priority: t.priority ?? 'medium',
   completed: !!t.completed,
   completedAt: t.completedAt ?? null,
@@ -314,7 +289,6 @@ const normalizeTask = (t: Partial<Task>): Task => ({
   pinned: !!t.pinned,
   assignee: t.assignee ?? DEFAULT_ASSIGNEE,
   miniSteps: normalizeMiniSteps((t as { miniSteps?: unknown }).miniSteps),
-  issue: normalizeIssue((t as { issue?: unknown }).issue),
   createdAt: t.createdAt ?? new Date().toISOString(),
 })
 
@@ -437,7 +411,6 @@ const toExportRow = (t: Task) => ({
   'メモ':        t.memo,
   '優先度':      PRIORITY_CONFIG[t.priority].label,
   '期限':        t.dueDate,
-  '時間帯':      t.dueTime,
   '完了':        t.completed ? '完了' : '未完了',
   '完了日時':    t.completedAt ? fmtDateTime(t.completedAt) : '',
   '今日の3つ':   t.isToday ? 'はい' : 'いいえ',
@@ -446,8 +419,6 @@ const toExportRow = (t: Task) => ({
     const current = getCurrentMiniStep(t)
     return current ? `${current.index}/${current.total} ${current.step.text}` : ''
   })(),
-  'イシュー':    t.issue.text,
-  'イシュー観点': ISSUE_CRITERIA.join(' / '),
   'ミニステップ一覧': normalizeMiniSteps(t.miniSteps)
     .filter(step => step.text.trim())
     .map((step, i) => `${i + 1}. ${step.done ? '[完了]' : '[未完了]'} ${step.text}`)
@@ -494,7 +465,7 @@ const handleExportExcel = (tasks: Task[], history: HistoryEntry[]) => {
   const taskSheet = XLSX.utils.json_to_sheet(taskRows)
   taskSheet['!cols'] = [
     {wch:32},{wch:12},{wch:40},{wch:8},{wch:12},{wch:8},
-    {wch:8},{wch:20},{wch:10},{wch:48},{wch:32},{wch:40},{wch:24},{wch:48},{wch:12},
+    {wch:20},{wch:10},{wch:48},{wch:32},{wch:48},{wch:12},
   ]
   const stepSheet = XLSX.utils.json_to_sheet(stepRows)
   stepSheet['!cols'] = [{wch:22},{wch:32},{wch:12},{wch:10},{wch:48},{wch:10}]
@@ -512,10 +483,10 @@ const handleExportExcel = (tasks: Task[], history: HistoryEntry[]) => {
 // ============================================================
 
 const makeNewTask = (): Task => ({
-  id:genId(), title:'', memo:'', dueDate:'', dueTime:'', priority:'medium',
+  id:genId(), title:'', memo:'', dueDate:'', priority:'medium',
   completed:false, completedAt:null, isToday:false, assignee:DEFAULT_ASSIGNEE,
   pinned:false,
-  miniSteps: emptyMiniSteps(), issue: emptyIssue(),
+  miniSteps: emptyMiniSteps(),
   createdAt: new Date().toISOString(),
 })
 
@@ -528,8 +499,14 @@ interface TaskModalProps {
 }
 
 const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAssignees, onSave, onClose }) => {
-  const [form, setForm] = useState<Task>(initial ?? makeNewTask())
+  const [form, setForm] = useState<Task>(() => normalizeTask(initial ?? makeNewTask()))
   const [dragStepId, setDragStepId] = useState<string | null>(null)
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'needsTitle'|'saving'|'saved'>(
+    initial && !isDraft ? 'saved' : 'needsTitle'
+  )
+  const savedSnapshotRef = useRef(
+    initial && !isDraft ? JSON.stringify(normalizeTask({ ...initial, assignee: initial.assignee || DEFAULT_ASSIGNEE })) : ''
+  )
   const [assigneeMode, setAssigneeMode] = useState<'select'|'new'>(
     initial && !knownAssignees.includes(initial.assignee) ? 'new' : 'select'
   )
@@ -538,8 +515,54 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
   )
 
   const effectiveAssignee = assigneeMode==='new' ? (newAssigneeDraft.trim() || DEFAULT_ASSIGNEE) : form.assignee
+  const buildSaveTask = () => normalizeTask({ ...form, assignee: effectiveAssignee })
+  const saveCurrentForm = () => {
+    const nextTask = buildSaveTask()
+    if (!nextTask.title.trim()) {
+      setAutoSaveStatus('needsTitle')
+      return
+    }
+    const snapshot = JSON.stringify(nextTask)
+    if (snapshot === savedSnapshotRef.current) {
+      setAutoSaveStatus('saved')
+      return
+    }
+    onSave(nextTask)
+    savedSnapshotRef.current = snapshot
+    setAutoSaveStatus('saved')
+  }
+  const handleClose = () => {
+    saveCurrentForm()
+    onClose()
+  }
+  const autoSaveLabel = !form.title.trim()
+    ? 'タスク名を入力すると自動保存'
+    : autoSaveStatus === 'saving'
+      ? '自動保存中...'
+      : '自動保存済み'
   const preview = fmtCondition({ ...form, assignee: effectiveAssignee })
   const miniSteps = normalizeMiniSteps(form.miniSteps)
+
+  useEffect(() => {
+    const nextTask = buildSaveTask()
+    if (!nextTask.title.trim()) {
+      setAutoSaveStatus('needsTitle')
+      return
+    }
+    const snapshot = JSON.stringify(nextTask)
+    if (snapshot === savedSnapshotRef.current) {
+      setAutoSaveStatus('saved')
+      return
+    }
+    setAutoSaveStatus('saving')
+    const timer = setTimeout(() => {
+      onSave(nextTask)
+      savedSnapshotRef.current = snapshot
+      setAutoSaveStatus('saved')
+    }, 700)
+    return () => clearTimeout(timer)
+  }, [form, effectiveAssignee, onSave])
+
   const setMiniStep = (id: string, patch: Partial<MiniStep>) =>
     setForm(p => ({ ...p, miniSteps: normalizeMiniSteps(p.miniSteps).map(s => s.id === id ? { ...s, ...patch } : s) }))
   const addMiniStep = () =>
@@ -561,15 +584,16 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
       next.splice(to, 0, moved)
       return { ...p, miniSteps: next }
     })
-  const setIssue = (patch: Partial<Issue>) =>
-    setForm(p => ({ ...p, issue: { ...normalizeIssue(p.issue), ...patch } }))
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="font-semibold text-gray-800">{initial && !isDraft ? 'タスクを編集' : 'タスクを追加'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
+          <div>
+            <h2 className="font-semibold text-gray-800">{initial && !isDraft ? 'タスクを編集' : 'タスクを追加'}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{autoSaveLabel}</p>
+          </div>
+          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
         </div>
         <div className="px-6 py-5 space-y-4">
 
@@ -604,19 +628,13 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
             </div>
           </div>
 
-          {/* 期限日・時間帯・優先度 */}
+          {/* 期限・優先度 */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">期限日・時間帯</label>
-              <div className="flex gap-1.5">
-                <input type="date" value={form.dueDate}
-                  onChange={e=>setForm(p=>({...p,dueDate:e.target.value}))}
-                  className="flex-1 min-w-0 border border-gray-200 rounded-md px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-navy"/>
-                <select value={form.dueTime} onChange={e=>setForm(p=>({...p,dueTime:e.target.value as Task['dueTime']}))}
-                  className="w-20 border border-gray-200 rounded-md px-1 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-navy bg-white">
-                  <option value="">-</option><option value="AM">AM</option><option value="PM">PM</option>
-                </select>
-              </div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">期限</label>
+              <input type="date" value={form.dueDate}
+                onChange={e=>setForm(p=>({...p,dueDate:e.target.value}))}
+                className="w-full border border-gray-200 rounded-md px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-navy"/>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">優先度</label>
@@ -681,24 +699,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
               className="w-full min-h-28 border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-navy resize-y"/>
           </div>
 
-          {/* イシュー */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">イシュー</label>
-            <textarea value={form.issue.text}
-              onChange={e=>setIssue({ text: e.target.value })}
-              placeholder="このタスクで答えを出したい本質的な問い..."
-              rows={2}
-              className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-navy resize-y"/>
-            <div className="mt-2 grid gap-2 sm:grid-cols-3">
-              {ISSUE_CRITERIA.map((label, i) => (
-                <div key={label} className="flex items-start gap-2 text-xs text-gray-600 bg-gray-50 rounded px-2 py-2">
-                  <span className="font-semibold text-navy flex-shrink-0">{i + 1}</span>
-                  <span>{label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
           {/* 完了条件 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">完了条件（自動）</label>
@@ -708,12 +708,11 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">キャンセル</button>
-          <button onClick={()=>form.title.trim()&&onSave(normalizeTask({...form,assignee:effectiveAssignee}))}
-            disabled={!form.title.trim()}
-            className="px-4 py-2 text-sm bg-navy text-white rounded-md hover:bg-navy-dark disabled:opacity-40 disabled:cursor-not-allowed">
-            {initial && !isDraft ? '保存' : '追加'}
+        <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-100">
+          <span className="text-xs text-gray-400">{autoSaveLabel}</span>
+          <button onClick={handleClose}
+            className="px-4 py-2 text-sm bg-navy text-white rounded-md hover:bg-navy-dark">
+            閉じる
           </button>
         </div>
       </div>
@@ -807,27 +806,19 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 {knownAssignees.map(a=><option key={a} value={a}>{a}</option>)}
               </select>
               <input type="date" value={task.dueDate}
-                title="期限日を変更"
+                title="期限を変更"
                 onMouseDown={e=>e.stopPropagation()}
                 onClick={e=>e.stopPropagation()}
-                onChange={e=>onQuickUpdate(task.id, { dueDate:e.target.value }, e.target.value ? `期限日を${fmtDate(e.target.value)}に変更` : '期限日を解除')}
+                onChange={e=>onQuickUpdate(task.id, { dueDate:e.target.value }, e.target.value ? `期限を${fmtDate(e.target.value)}に変更` : '期限を解除')}
                 className="min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-navy"/>
             </div>
             <p className="text-xs text-gray-400 mt-0.5 truncate">完了条件: {cond}</p>
-            {task.issue.text && (
-              <div className="mt-1.5 text-xs bg-amber-50 text-amber-800 rounded px-2 py-1.5 leading-relaxed">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold flex-shrink-0">Issue</span>
-                  <span className="truncate flex-1">{task.issue.text}</span>
-                </div>
-              </div>
-            )}
             {task.dueDate && (
               <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${
                 todayDue ? 'text-red-600' : overdue ? 'text-red-500' : 'text-gray-400'
               }`}>
                 <Calendar size={11}/>
-                <span>{fmtDate(task.dueDate)}{task.dueTime?` ${task.dueTime}`:''}{overdue&&!todayDue?'（期限切れ）':''}</span>
+                <span>{fmtDate(task.dueDate)}{overdue&&!todayDue?'（期限切れ）':''}</span>
               </div>
             )}
             {task.completed && task.completedAt && (
@@ -1117,7 +1108,7 @@ const GanttChart: React.FC<{tasks:Task[]}> = ({tasks}) => {
   const cur = new Date(winStart)
   while(cur.getTime()<=winEnd.getTime()+7*86400000){weeks.push(new Date(cur));cur.setDate(cur.getDate()+7)}
   useEffect(()=>{if(scrollRef.current)scrollRef.current.scrollLeft=Math.max(0,todayX-120)},[todayX])
-  if(!withDates.length) return <div className="bg-white border border-gray-200 rounded-lg py-12 text-center text-gray-400 text-sm">期限日が設定されたタスクがありません</div>
+  if(!withDates.length) return <div className="bg-white border border-gray-200 rounded-lg py-12 text-center text-gray-400 text-sm">期限が設定されたタスクがありません</div>
   const ROW_H = 52
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -1168,7 +1159,7 @@ const GanttChart: React.FC<{tasks:Task[]}> = ({tasks}) => {
                     </div>
                     {overdue&&!td&&<div className="absolute w-1.5 h-6 top-[13px] bg-red-600 rounded-r opacity-70 z-10" style={{left:endX-6}}/>}
                     <span className={`absolute text-xs top-[15px] whitespace-nowrap ${td?'text-red-600 font-medium':overdue?'text-red-500':'text-gray-400'}`} style={{left:endX+4}}>
-                      {fmtDate(task.dueDate)}{task.dueTime?' '+task.dueTime:''}
+                      {fmtDate(task.dueDate)}
                     </span>
                   </div>
                 )
@@ -1535,7 +1526,7 @@ const TemplatesModal: React.FC<TemplatesModalProps> = ({ onUse, onClose }) => (
       </div>
       <div className="overflow-y-auto flex-1 px-6 py-4 space-y-3">
         <p className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2 leading-relaxed">
-          よくある仕事を、完了条件・ミニステップ・イシュー付きで開始できます。将来的にはAIで職種別テンプレートを自動生成する想定です。
+          よくある仕事を、完了条件・ミニステップ付きで開始できます。将来的にはAIで職種別テンプレートを自動生成する想定です。
         </p>
         {TASK_TEMPLATES.map(template => (
           <div key={template.id} className="border border-gray-100 rounded-lg p-4 bg-white">
@@ -1556,9 +1547,6 @@ const TemplatesModal: React.FC<TemplatesModalProps> = ({ onUse, onClose }) => (
                 </div>
               ))}
             </div>
-            <p className="mt-3 text-xs text-amber-800 bg-amber-50 rounded px-3 py-2">
-              Issue: {template.task.issue.text}
-            </p>
           </div>
         ))}
       </div>
@@ -1718,13 +1706,13 @@ export default function App() {
   const allSectionTasks = sortTasksForWork(cardVisibleTasks.filter(t=>!t.isToday && !todayCompletedTasks.some(done=>done.id===t.id)))
 
   const handleSave = (task: Task) => {
-    const isNew = !tasks.find(t => t.id === task.id)
+    const nextTask = normalizeTask(task)
+    const isNew = !tasks.find(t => t.id === nextTask.id)
     setTasks(prev => {
-      const idx = prev.findIndex(t => t.id === task.id)
-      return idx >= 0 ? prev.map(t => t.id === task.id ? task : t) : [...prev, task]
+      const idx = prev.findIndex(t => t.id === nextTask.id)
+      return idx >= 0 ? prev.map(t => t.id === nextTask.id ? nextTask : t) : [...prev, nextTask]
     })
-    addHistory(isNew ? 'created' : 'updated', task)
-    setShowModal(false); setEditTask(null)
+    addHistory(isNew ? 'created' : 'updated', nextTask, isNew ? '自動保存で作成' : '自動保存')
   }
 
   // 完了チェック時に日時を記録
@@ -1961,7 +1949,7 @@ export default function App() {
                     {([
                       {key:'assignee' as BoardGroupMode,label:'宛先'},
                       {key:'priority' as BoardGroupMode,label:'優先度'},
-                      {key:'due' as BoardGroupMode,label:'期限日'},
+                      {key:'due' as BoardGroupMode,label:'期限'},
                     ]).map((mode, i)=>(
                       <button key={mode.key} onClick={()=>setBoardGroupMode(mode.key)}
                         className={`text-xs px-3 py-1.5 transition-colors ${i>0?'border-l border-gray-200':''} ${boardGroupMode===mode.key?'bg-navy text-white':'text-gray-600 hover:bg-gray-50'}`}>
