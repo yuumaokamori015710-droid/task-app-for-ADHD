@@ -25,6 +25,7 @@ interface MiniStep {
 interface Task {
   id: string
   title: string
+  goal: string
   memo: string              // フリーメモ
   dueDate: string           // 'YYYY-MM-DD'
   priority: Priority
@@ -71,7 +72,7 @@ interface TaskTemplate {
   id: string
   title: string
   description: string
-  task: Pick<Task, 'title' | 'memo' | 'priority' | 'miniSteps'>
+  task: Pick<Task, 'title' | 'goal' | 'memo' | 'priority' | 'miniSteps'>
 }
 
 // ============================================================
@@ -133,6 +134,7 @@ const TASK_TEMPLATES: TaskTemplate[] = [
     description: '相手に見てほしい資料や判断を渡す',
     task: {
       title: '確認依頼を送る',
+      goal: '相手が判断できる材料をそろえて、確認依頼を出し切る',
       memo: '誰に: \n何を: \nどの段階まで: 判断できる状態まで\nどうする: 確認依頼する',
       priority: 'medium',
       miniSteps: makeTemplateSteps(['確認してほしい対象を1つに絞る', '相手に見てほしい観点を書く', '期限と返答方法を添えて送る']),
@@ -144,6 +146,7 @@ const TASK_TEMPLATES: TaskTemplate[] = [
     description: '会議後の抜け漏れを防ぐ',
     task: {
       title: '会議後フォローを完了する',
+      goal: '参加者が次にやることを迷わず動ける状態にする',
       memo: '誰に: 参加者\n何を: 決定事項と次アクション\nどの段階まで: 各担当が動ける状態まで\nどうする: 共有する',
       priority: 'high',
       miniSteps: makeTemplateSteps(['決定事項を3行で書く', '担当者と期限を入れる', '参加者に共有して確認を取る']),
@@ -155,6 +158,7 @@ const TASK_TEMPLATES: TaskTemplate[] = [
     description: '白紙の企画を小さく進める',
     task: {
       title: '企画の初稿を作る',
+      goal: 'レビューに出せる企画初稿を作る',
       memo: '誰に: \n何を: 企画初稿\nどの段階まで: レビューに出せる状態まで\nどうする: 作成する',
       priority: 'medium',
       miniSteps: makeTemplateSteps(['目的と対象者を1文で書く', '解決する課題を3つ出す', '初稿を作ってレビュー依頼する']),
@@ -227,38 +231,6 @@ const applyDueGroup = (task: Task, group: DueGroup): Task => {
   return { ...task, completed: false, completedAt: null, dueDate }
 }
 
-const extractFirstMatch = (text: string, patterns: RegExp[]) => {
-  for (const pattern of patterns) {
-    const match = text.match(pattern)
-    if (match?.[1]?.trim()) return match[1].trim()
-  }
-  return ''
-}
-
-const inferCompletionCondition = (task: Pick<Task, 'title'|'memo'|'assignee'>) => {
-  const text = `${task.title}\n${task.memo}`.trim()
-  const who = task.assignee || DEFAULT_ASSIGNEE
-  const what = extractFirstMatch(text, [
-    /(?:何を|対象|成果物|内容)[:：]\s*([^\n]+)/i,
-    /(.+?)(?:を|について)(?:作成|共有|確認|連絡|送付|提出|完了|整理|レビュー|依頼)/,
-  ]) || task.title.trim()
-  const stage = extractFirstMatch(text, [
-    /(?:どの段階まで|段階|状態|完了条件)[:：]\s*([^\n]+)/i,
-    /(?:までに|まで)\s*([^\n]+)/,
-  ]) || '完了扱いにできる段階まで'
-  const action = extractFirstMatch(text, [
-    /(?:どうする|対応|アクション)[:：]\s*([^\n]+)/i,
-    /(作成|共有|確認|連絡|送付|提出|完了|整理|レビュー|依頼|更新|調整|回答)(?:する|して|$)/,
-  ]) || '進める'
-
-  return { who, what, stage, action }
-}
-
-const fmtCondition = (task: Pick<Task, 'title'|'memo'|'assignee'>) => {
-  const c = inferCompletionCondition(task)
-  return `${c.who}に、${c.what}を、${c.stage}、${c.action}`
-}
-
 const emptyMiniSteps = (): MiniStep[] =>
   Array.from({ length: MIN_MINI_STEPS }, () => ({ id: genId(), text: '', done: false }))
 
@@ -280,6 +252,7 @@ const normalizeMiniSteps = (steps: unknown): MiniStep[] => {
 const normalizeTask = (t: Partial<Task>): Task => ({
   id: t.id ?? genId(),
   title: t.title ?? '',
+  goal: t.goal ?? '',
   memo: t.memo ?? '',
   dueDate: t.dueDate ?? '',
   priority: t.priority ?? 'medium',
@@ -407,6 +380,7 @@ async function gistSave(token: string, gistId: string, data: AppData): Promise<s
 
 const toExportRow = (t: Task) => ({
   'タイトル':    t.title,
+  'ゴール':      t.goal,
   '宛先':        t.assignee,
   'メモ':        t.memo,
   '優先度':      PRIORITY_CONFIG[t.priority].label,
@@ -414,7 +388,6 @@ const toExportRow = (t: Task) => ({
   '完了':        t.completed ? '完了' : '未完了',
   '完了日時':    t.completedAt ? fmtDateTime(t.completedAt) : '',
   '今日の3つ':   t.isToday ? 'はい' : 'いいえ',
-  '完了条件':    fmtCondition(t),
   '現在ステップ': (() => {
     const current = getCurrentMiniStep(t)
     return current ? `${current.index}/${current.total} ${current.step.text}` : ''
@@ -464,8 +437,8 @@ const handleExportExcel = (tasks: Task[], history: HistoryEntry[]) => {
   const historyRows = toHistoryExportRows(history)
   const taskSheet = XLSX.utils.json_to_sheet(taskRows)
   taskSheet['!cols'] = [
-    {wch:32},{wch:12},{wch:40},{wch:8},{wch:12},{wch:8},
-    {wch:20},{wch:10},{wch:48},{wch:32},{wch:48},{wch:12},
+    {wch:32},{wch:40},{wch:12},{wch:40},{wch:8},{wch:12},
+    {wch:8},{wch:20},{wch:10},{wch:32},{wch:48},{wch:12},
   ]
   const stepSheet = XLSX.utils.json_to_sheet(stepRows)
   stepSheet['!cols'] = [{wch:22},{wch:32},{wch:12},{wch:10},{wch:48},{wch:10}]
@@ -483,7 +456,7 @@ const handleExportExcel = (tasks: Task[], history: HistoryEntry[]) => {
 // ============================================================
 
 const makeNewTask = (): Task => ({
-  id:genId(), title:'', memo:'', dueDate:'', priority:'medium',
+  id:genId(), title:'', goal:'', memo:'', dueDate:'', priority:'medium',
   completed:false, completedAt:null, isToday:false, assignee:DEFAULT_ASSIGNEE,
   pinned:false,
   miniSteps: emptyMiniSteps(),
@@ -540,7 +513,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
     : autoSaveStatus === 'saving'
       ? '自動保存中...'
       : '自動保存済み'
-  const preview = fmtCondition({ ...form, assignee: effectiveAssignee })
   const miniSteps = normalizeMiniSteps(form.miniSteps)
 
   useEffect(() => {
@@ -689,6 +661,16 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
             </div>
           </div>
 
+          {/* ゴール */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">ゴール</label>
+            <textarea value={form.goal}
+              onChange={e=>setForm(p=>({...p,goal:e.target.value}))}
+              placeholder="このタスクで最終的に到達したい状態..."
+              rows={2}
+              className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-navy resize-y"/>
+          </div>
+
           {/* メモ */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">メモ</label>
@@ -697,14 +679,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
               placeholder="補足・背景・リンクなど自由記述..."
               rows={4}
               className="w-full min-h-28 border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-navy resize-y"/>
-          </div>
-
-          {/* 完了条件 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">完了条件（自動）</label>
-            <p className="text-xs bg-gray-50 text-gray-600 rounded px-3 py-2 leading-relaxed">
-              {preview}
-            </p>
           </div>
         </div>
 
@@ -740,7 +714,6 @@ const TaskCard: React.FC<TaskCardProps> = ({
   onComplete, onToday, onPin, onQuickUpdate, onStepToggle, onStepReorder, onEdit, onDelete, hideAssignee=false,
 }) => {
   const pc         = PRIORITY_CONFIG[task.priority]
-  const cond       = fmtCondition(task)
   const overdue    = !task.completed && isOverdue(task.dueDate)
   const todayDue   = !task.completed && !!task.dueDate && isToday(task.dueDate)
   const visibleSteps = normalizeMiniSteps(task.miniSteps).filter(s => s.text.trim())
@@ -812,7 +785,6 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 onChange={e=>onQuickUpdate(task.id, { dueDate:e.target.value }, e.target.value ? `期限を${fmtDate(e.target.value)}に変更` : '期限を解除')}
                 className="min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-navy"/>
             </div>
-            <p className="text-xs text-gray-400 mt-0.5 truncate">完了条件: {cond}</p>
             {task.dueDate && (
               <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${
                 todayDue ? 'text-red-600' : overdue ? 'text-red-500' : 'text-gray-400'
@@ -867,6 +839,13 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {task.goal && (
+          <div className="mt-2 text-xs bg-emerald-50 text-emerald-800 rounded px-3 py-2 leading-relaxed">
+            <div className="font-semibold mb-0.5">ゴール</div>
+            <p className="whitespace-pre-wrap">{task.goal}</p>
           </div>
         )}
 
@@ -1526,7 +1505,7 @@ const TemplatesModal: React.FC<TemplatesModalProps> = ({ onUse, onClose }) => (
       </div>
       <div className="overflow-y-auto flex-1 px-6 py-4 space-y-3">
         <p className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2 leading-relaxed">
-          よくある仕事を、完了条件・ミニステップ付きで開始できます。将来的にはAIで職種別テンプレートを自動生成する想定です。
+          よくある仕事を、ゴール・ミニステップ付きで開始できます。将来的にはAIで職種別テンプレートを自動生成する想定です。
         </p>
         {TASK_TEMPLATES.map(template => (
           <div key={template.id} className="border border-gray-100 rounded-lg p-4 bg-white">
