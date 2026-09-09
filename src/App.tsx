@@ -32,6 +32,7 @@ interface Task {
   completed: boolean
   completedAt: string | null  // 完了日時（ISO）
   isToday: boolean
+  isNow: boolean
   pinned: boolean
   assignee: string
   miniSteps: MiniStep[]
@@ -42,6 +43,7 @@ type HistoryAction =
   | 'created' | 'updated' | 'deleted'
   | 'completed' | 'uncompleted'
   | 'todayAdded' | 'todayRemoved'
+  | 'nowSet' | 'nowCleared'
   | 'pinned' | 'unpinned'
   | 'autoDeleted'
 
@@ -96,6 +98,8 @@ const ACTION_CONFIG: Record<HistoryAction, { label: string; icon: React.ReactNod
   uncompleted:   { label: '完了解除',     icon: <RotateCcw size={13}/>,  color: 'text-gray-600 bg-gray-100' },
   todayAdded:    { label: '今日に追加',   icon: <Star size={13}/>,       color: 'text-yellow-600 bg-yellow-50' },
   todayRemoved:  { label: '今日から除外', icon: <StarOff size={13}/>,    color: 'text-gray-500 bg-gray-100' },
+  nowSet:         { label: '今からやる',   icon: <Star size={13}/>,       color: 'text-emerald-700 bg-emerald-50' },
+  nowCleared:     { label: '今から解除',   icon: <StarOff size={13}/>,    color: 'text-gray-500 bg-gray-100' },
   pinned:        { label: 'ピン留め',     icon: <Pin size={13}/>,        color: 'text-sky-600 bg-sky-50' },
   unpinned:      { label: 'ピン解除',     icon: <PinOff size={13}/>,     color: 'text-gray-500 bg-gray-100' },
   autoDeleted:   { label: '棚卸削除',     icon: <Trash2 size={13}/>,     color: 'text-red-600 bg-red-50' },
@@ -220,7 +224,7 @@ const getDueGroup = (task: Task): DueGroup => {
 
 const applyDueGroup = (task: Task, group: DueGroup): Task => {
   if (group === 'completed') {
-    return { ...task, completed: true, completedAt: task.completedAt ?? new Date().toISOString() }
+    return { ...task, completed: true, completedAt: task.completedAt ?? new Date().toISOString(), isToday: false, isNow: false }
   }
   const dueDate =
     group === 'overdue' ? addDaysStr(-1) :
@@ -259,6 +263,7 @@ const normalizeTask = (t: Partial<Task>): Task => ({
   completed: !!t.completed,
   completedAt: t.completedAt ?? null,
   isToday: !!t.isToday,
+  isNow: !!(t as { isNow?: unknown }).isNow,
   pinned: !!t.pinned,
   assignee: t.assignee ?? DEFAULT_ASSIGNEE,
   miniSteps: normalizeMiniSteps((t as { miniSteps?: unknown }).miniSteps),
@@ -388,11 +393,12 @@ const toExportRow = (t: Task) => ({
   '完了':        t.completed ? '完了' : '未完了',
   '完了日時':    t.completedAt ? fmtDateTime(t.completedAt) : '',
   '今日の3つ':   t.isToday ? 'はい' : 'いいえ',
-  '現在ステップ': (() => {
+  '今からやる':  t.isNow ? 'はい' : 'いいえ',
+  '現在アクション': (() => {
     const current = getCurrentMiniStep(t)
     return current ? `${current.index}/${current.total} ${current.step.text}` : ''
   })(),
-  'ミニステップ一覧': normalizeMiniSteps(t.miniSteps)
+  'ネクストアクション一覧': normalizeMiniSteps(t.miniSteps)
     .filter(step => step.text.trim())
     .map((step, i) => `${i + 1}. ${step.done ? '[完了]' : '[未完了]'} ${step.text}`)
     .join('\n'),
@@ -406,8 +412,8 @@ const toStepExportRows = (tasks: Task[]) => tasks.flatMap(t =>
       'タスクID': t.id,
       'タスク': t.title,
       '宛先': t.assignee,
-      'ステップ番号': i + 1,
-      'ステップ': step.text,
+      'アクション番号': i + 1,
+      'ネクストアクション': step.text,
       '完了': step.done ? '完了' : '未完了',
     }))
 )
@@ -438,7 +444,7 @@ const handleExportExcel = (tasks: Task[], history: HistoryEntry[]) => {
   const taskSheet = XLSX.utils.json_to_sheet(taskRows)
   taskSheet['!cols'] = [
     {wch:32},{wch:40},{wch:12},{wch:40},{wch:8},{wch:12},
-    {wch:8},{wch:20},{wch:10},{wch:32},{wch:48},{wch:12},
+    {wch:8},{wch:20},{wch:10},{wch:10},{wch:32},{wch:48},{wch:12},
   ]
   const stepSheet = XLSX.utils.json_to_sheet(stepRows)
   stepSheet['!cols'] = [{wch:22},{wch:32},{wch:12},{wch:10},{wch:48},{wch:10}]
@@ -446,7 +452,7 @@ const handleExportExcel = (tasks: Task[], history: HistoryEntry[]) => {
   historySheet['!cols'] = [{wch:20},{wch:14},{wch:22},{wch:32},{wch:48}]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, taskSheet, 'タスク一覧')
-  XLSX.utils.book_append_sheet(wb, stepSheet, 'ミニステップ')
+  XLSX.utils.book_append_sheet(wb, stepSheet, 'ネクストアクション')
   XLSX.utils.book_append_sheet(wb, historySheet, '操作履歴')
   XLSX.writeFile(wb, `adhd-task-export-${todayStr()}.xlsx`)
 }
@@ -457,7 +463,7 @@ const handleExportExcel = (tasks: Task[], history: HistoryEntry[]) => {
 
 const makeNewTask = (): Task => ({
   id:genId(), title:'', goal:'', memo:'', dueDate:'', priority:'medium',
-  completed:false, completedAt:null, isToday:false, assignee:DEFAULT_ASSIGNEE,
+  completed:false, completedAt:null, isToday:false, isNow:false, assignee:DEFAULT_ASSIGNEE,
   pinned:false,
   miniSteps: emptyMiniSteps(),
   createdAt: new Date().toISOString(),
@@ -617,13 +623,13 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
             </div>
           </div>
 
-          {/* ミニステップ */}
+          {/* ネクストアクション */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-sm font-medium text-gray-700">ミニステップ</label>
+              <label className="block text-sm font-medium text-gray-700">ネクストアクション</label>
               <button type="button" onClick={addMiniStep}
                 className="flex items-center gap-1 text-xs text-navy hover:text-navy-dark">
-                <Plus size={13}/>ステップ追加
+                <Plus size={13}/>アクション追加
               </button>
             </div>
             <div className="space-y-2">
@@ -648,7 +654,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
                   <span className="text-xs text-gray-400 w-8 flex-shrink-0">#{i + 1}</span>
                   <input type="text" value={step.text}
                     onChange={e=>setMiniStep(step.id, { text: e.target.value })}
-                    placeholder={`ステップ${i + 1}`}
+                    placeholder={`アクション${i + 1}`}
                     className="flex-1 min-w-0 border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-navy"/>
                   {miniSteps.length > MIN_MINI_STEPS && (
                     <button type="button" onClick={()=>removeMiniStep(step.id)}
@@ -723,7 +729,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
     <div className={[
       'rounded-md overflow-hidden border-2 transition-all',
       task.completed       ? 'opacity-50 border-gray-200'            : '',
-      todayDue             ? 'border-red-500 urgent-glow'            : (!task.completed ? 'border-gray-200' : ''),
+      todayDue             ? 'border-red-500 urgent-glow'            : (!task.completed && task.isNow ? 'border-emerald-400 shadow-sm' : !task.completed ? 'border-gray-200' : ''),
     ].join(' ')}>
 
       {/* 今日締め切りバナー */}
@@ -765,6 +771,9 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 <option value="medium">中</option>
                 <option value="low">低</option>
               </select>
+              {task.isNow && !task.completed && (
+                <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium flex-shrink-0">今から</span>
+              )}
               {!hideAssignee && task.assignee!==DEFAULT_ASSIGNEE && (
                 <span className="text-xs px-1.5 py-0.5 rounded bg-navy/10 text-navy flex-shrink-0">→ {task.assignee}</span>
               )}
@@ -812,7 +821,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
         {visibleSteps.length > 0 && (
           <div className="mt-2.5 rounded px-2 py-1.5 text-xs leading-relaxed bg-blue-50 text-blue-700">
             <div className="font-semibold mb-1">
-              ステップ完了 {completedStepCount}/{visibleSteps.length}
+              ネクストアクション完了 {completedStepCount}/{visibleSteps.length}
             </div>
             <div className="space-y-0.5">
               {visibleSteps.map((step, i) => (
@@ -826,7 +835,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
                     type="button"
                     onMouseDown={e=>e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); onStepToggle(task.id, step.id) }}
-                    title={step.done ? 'ステップを未完了にする' : 'ステップを完了にする'}
+                    title={step.done ? 'アクションを未完了にする' : 'アクションを完了にする'}
                     className={`mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
                       step.done ? 'bg-navy border-navy text-white' : 'border-blue-300 bg-white hover:border-navy'
                     }`}
@@ -1104,7 +1113,7 @@ const GanttChart: React.FC<{tasks:Task[]}> = ({tasks}) => {
                   {td&&<span className="text-red-500 flex-shrink-0">!</span>}
                   <span className={`text-xs truncate ${td?'text-red-700 font-semibold':'text-gray-700'}`}>{task.title}</span>
                 </div>
-                {current && <span className="text-[11px] text-gray-400 truncate">Step {current.index}/{current.total}: {current.step.text}</span>}
+                {current && <span className="text-[11px] text-gray-400 truncate">次アクション {current.index}/{current.total}: {current.step.text}</span>}
               </div>
             )
           })}
@@ -1505,7 +1514,7 @@ const TemplatesModal: React.FC<TemplatesModalProps> = ({ onUse, onClose }) => (
       </div>
       <div className="overflow-y-auto flex-1 px-6 py-4 space-y-3">
         <p className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2 leading-relaxed">
-          よくある仕事を、ゴール・ミニステップ付きで開始できます。将来的にはAIで職種別テンプレートを自動生成する想定です。
+          よくある仕事を、ゴール・ネクストアクション付きで開始できます。将来的にはAIで職種別テンプレートを自動生成する想定です。
         </p>
         {TASK_TEMPLATES.map(template => (
           <div key={template.id} className="border border-gray-100 rounded-lg p-4 bg-white">
@@ -1575,6 +1584,7 @@ export default function App() {
   const [showTeachings,  setShowTeachings]  = useState(false)
   const [showHistory,    setShowHistory]    = useState(false)
   const [showTemplates,  setShowTemplates]  = useState(false)
+  const [dragTodayTaskId, setDragTodayTaskId] = useState<string|null>(null)
   const [showGistSettings, setShowGistSettings] = useState(false)
 
   // settingsRef: sync effect 内で最新の settings を参照するため
@@ -1680,6 +1690,8 @@ export default function App() {
   const cardVisibleTasks = tasks.filter(t => !isHiddenCompletedTask(t))
   const todayTasks       = sortTasksForWork(cardVisibleTasks.filter(t=>t.isToday))
   const todayActiveCount = todayTasks.filter(t=>!t.completed).length
+  const nowTask          = todayTasks.find(t=>t.isNow && !t.completed) ?? null
+  const todayQueueTasks  = todayTasks.filter(t=>t.id !== nowTask?.id)
   const todayCompletedTasks = sortTasksForWork(cardVisibleTasks.filter(t=>t.completed && t.completedAt?.startsWith(todayStr())))
 
   const allSectionTasks = sortTasksForWork(cardVisibleTasks.filter(t=>!t.isToday && !todayCompletedTasks.some(done=>done.id===t.id)))
@@ -1703,6 +1715,7 @@ export default function App() {
       completed: nowCompleted,
       completedAt: nowCompleted ? new Date().toISOString() : null,
       isToday: nowCompleted ? false : t.isToday,
+      isNow: nowCompleted ? false : t.isNow,
     }))
     addHistory(nowCompleted ? 'completed' : 'uncompleted', task)
   }
@@ -1711,8 +1724,25 @@ export default function App() {
     const task = tasks.find(t => t.id === id); if (!task) return
     if (!task.isToday && todayActiveCount >= MAX_TODAY) { setTodayWarn(true); return }
     const adding = !task.isToday
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, isToday: adding } : t))
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, isToday: adding, isNow: adding ? t.isNow : false } : t))
     addHistory(adding ? 'todayAdded' : 'todayRemoved', task)
+  }
+
+  const handleSetNow = (id: string) => {
+    const task = tasks.find(t => t.id === id); if (!task || task.completed) return
+    if (task.isToday && task.isNow) return
+    if (!task.isToday && todayActiveCount >= MAX_TODAY) { setTodayWarn(true); return }
+    setTasks(prev => prev.map(t => t.id === id
+      ? { ...t, isToday: true, isNow: true }
+      : { ...t, isNow: false }
+    ))
+    addHistory('nowSet', task, '今からやる枠に移動')
+  }
+
+  const handleClearNow = () => {
+    const task = tasks.find(t => t.isNow)
+    setTasks(prev => prev.map(t => t.isNow ? { ...t, isNow: false } : t))
+    if (task) addHistory('nowCleared', task)
   }
 
   const handlePin = (id: string) => {
@@ -1749,7 +1779,7 @@ export default function App() {
       ...t,
       miniSteps: normalizeMiniSteps(t.miniSteps).map(s => s.id === stepId ? { ...s, done: nextDone } : s),
     } : t))
-    addHistory('updated', task, `ステップ${nextDone ? '完了' : '未完了'}: ${step.text}`)
+    addHistory('updated', task, `アクション${nextDone ? '完了' : '未完了'}: ${step.text}`)
   }
 
   const handleStepReorder = (taskId: string, draggedStepId: string, targetStepId: string) => {
@@ -1763,7 +1793,7 @@ export default function App() {
     const [moved] = nextSteps.splice(from, 1)
     nextSteps.splice(to, 0, moved)
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, miniSteps: nextSteps } : t))
-    addHistory('updated', task, `ステップ並び替え: ${moved.text || '未入力ステップ'}`)
+    addHistory('updated', task, `アクション並び替え: ${moved.text || '未入力アクション'}`)
   }
 
   const handleEdit = (task: Task) => { setEditTask(task); setShowModal(true) }
@@ -1789,6 +1819,21 @@ export default function App() {
     onComplete:handleComplete, onToday:handleToday, onPin:handlePin,
     onQuickUpdate:handleQuickUpdate, onStepToggle:handleStepToggle, onStepReorder:handleStepReorder,
     onEdit:handleEdit, onDelete:(id:string)=>setDeleteId(id),
+  }
+
+  const handleTodayDragStart = (id: string, e: React.DragEvent<HTMLDivElement>) => {
+    setDragTodayTaskId(id)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('application/x-task-id', id)
+  }
+
+  const handleTodayDragEnd = () => setDragTodayTaskId(null)
+
+  const handleNowDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const taskId = dragTodayTaskId || e.dataTransfer.getData('application/x-task-id')
+    if (taskId) handleSetNow(taskId)
+    setDragTodayTaskId(null)
   }
 
   const dateLabel = new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric',weekday:'short'})
@@ -1880,7 +1925,7 @@ export default function App() {
           <section>
             <div className="mb-4">
               <h2 className="font-semibold text-gray-800">ガントチャート</h2>
-              <p className="text-xs text-gray-500 mt-0.5">期限と現在ステップを時系列で確認</p>
+              <p className="text-xs text-gray-500 mt-0.5">期限と現在アクションを時系列で確認</p>
             </div>
             <GanttChart tasks={tasks}/>
           </section>
@@ -1898,7 +1943,61 @@ export default function App() {
               </div>
               {todayTasks.length===0
                 ? <div className="text-center py-6 text-gray-400 text-sm">タスクカードの「今日」ボタンで追加できます</div>
-                : <div className="grid gap-3 md:grid-cols-3">{todayTasks.map(t=><TaskCard key={t.id} task={t} knownAssignees={knownAssignees} {...cardProps}/>)}</div>
+                : (
+                  <div className="space-y-4">
+                    <div
+                      onDragOver={e=>{e.preventDefault(); e.dataTransfer.dropEffect='move'}}
+                      onDrop={handleNowDrop}
+                      className={[
+                        'rounded-lg border-2 border-dashed p-3 transition-all',
+                        dragTodayTaskId ? 'border-emerald-400 bg-emerald-50/80' : nowTask ? 'border-emerald-300 bg-emerald-50' : 'border-gray-300 bg-white/70',
+                      ].join(' ')}
+                    >
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <div>
+                          <h3 className="text-sm font-semibold text-emerald-800">今からやる</h3>
+                          <p className="text-xs text-emerald-700/70">今日の3つからドラッグして1件だけ集中</p>
+                        </div>
+                        {nowTask && (
+                          <button onClick={handleClearNow}
+                            className="text-xs px-2.5 py-1 rounded-md bg-white text-emerald-700 hover:bg-emerald-100 border border-emerald-200">
+                            解除
+                          </button>
+                        )}
+                      </div>
+                      {nowTask ? (
+                        <div
+                          draggable
+                          onDragStart={e=>handleTodayDragStart(nowTask.id, e)}
+                          onDragEnd={handleTodayDragEnd}
+                          className="cursor-grab"
+                        >
+                          <TaskCard task={nowTask} knownAssignees={knownAssignees} {...cardProps}/>
+                        </div>
+                      ) : (
+                        <div className="rounded-md border border-dashed border-emerald-200 bg-white/70 px-3 py-6 text-center text-sm text-emerald-700/70">
+                          今から手をつけるタスクをここへドラッグ
+                        </div>
+                      )}
+                    </div>
+
+                    {todayQueueTasks.length > 0 && (
+                      <div className="grid gap-3 md:grid-cols-3">
+                        {todayQueueTasks.map(t=>(
+                          <div
+                            key={t.id}
+                            draggable
+                            onDragStart={e=>handleTodayDragStart(t.id, e)}
+                            onDragEnd={handleTodayDragEnd}
+                            className="cursor-grab"
+                          >
+                            <TaskCard task={t} knownAssignees={knownAssignees} {...cardProps}/>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
               }
             </section>
 
