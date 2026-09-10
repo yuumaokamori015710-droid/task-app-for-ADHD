@@ -601,7 +601,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
             <h2 className="font-semibold text-gray-800">{initial && !isDraft ? 'タスクを編集' : 'タスクを追加'}</h2>
             <p className="text-xs text-gray-400 mt-0.5">{autoSaveLabel}</p>
           </div>
-          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
+          <button onClick={handleClose} title="閉じる" className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
         </div>
         <div className="px-6 py-5 space-y-4">
 
@@ -722,13 +722,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-100">
-          <span className="text-xs text-gray-400">{autoSaveLabel}</span>
-          <button onClick={handleClose}
-            className="px-4 py-2 text-sm bg-navy text-white rounded-md hover:bg-navy-dark">
-            閉じる
-          </button>
-        </div>
       </div>
     </div>
   )
@@ -1274,7 +1267,7 @@ const GistSettingsModal: React.FC<GistSettingsModalProps> = ({
             <Cloud size={18} className="text-navy"/>
             <h2 className="font-semibold text-gray-800">GitHub Gist 設定</h2>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
+          <button onClick={onClose} title="閉じる" className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
         </div>
 
         <div className="px-6 py-5 space-y-4">
@@ -1326,7 +1319,6 @@ const GistSettingsModal: React.FC<GistSettingsModalProps> = ({
             接続を解除
           </button>
           <div className="flex justify-end gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">閉じる</button>
             <button
               onClick={handleSave}
               disabled={checking}
@@ -1395,7 +1387,7 @@ const HistoryModal: React.FC<{ history: HistoryEntry[]; onClose: () => void }> =
             <h2 className="font-semibold text-gray-800">作業の軌跡</h2>
             <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{history.length}件</span>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
+          <button onClick={onClose} title="閉じる" className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
         </div>
 
         <div className="px-6 pt-4 flex gap-2 flex-shrink-0">
@@ -1508,11 +1500,8 @@ const HistoryModal: React.FC<{ history: HistoryEntry[]; onClose: () => void }> =
         </div>
 
         {/* フッター */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 flex-shrink-0">
+        <div className="px-6 py-3 border-t border-gray-100 flex-shrink-0">
           <p className="text-xs text-gray-400">履歴は自動削除されません</p>
-          <button onClick={onClose} className="px-4 py-2 text-sm bg-navy text-white rounded-md hover:bg-navy-dark">
-            閉じる
-          </button>
         </div>
       </div>
     </div>
@@ -1584,7 +1573,7 @@ const ArchiveModal: React.FC<{
             <h2 className="font-semibold text-gray-800">タスク保管庫</h2>
             <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{completedTasks.length + deletedTasks.length}件</span>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
+          <button onClick={onClose} title="閉じる" className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
         </div>
 
         <div className="px-6 pt-4 flex gap-2 flex-shrink-0">
@@ -1608,11 +1597,8 @@ const ArchiveModal: React.FC<{
           )}
         </div>
 
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 flex-shrink-0">
+        <div className="px-6 py-3 border-t border-gray-100 flex-shrink-0">
           <p className="text-xs text-gray-400">カードから消えた完了タスクと削除済みタスクをここで確認できます</p>
-          <button onClick={onClose} className="px-4 py-2 text-sm bg-navy text-white rounded-md hover:bg-navy-dark">
-            閉じる
-          </button>
         </div>
       </div>
     </div>
@@ -1628,7 +1614,7 @@ const TeachingsModal: React.FC<{onClose:()=>void}> = ({onClose}) => (
     <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto">
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2"><BookOpen size={18} className="text-navy"/><h2 className="font-semibold text-gray-800">ノイマンの教え</h2></div>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
+        <button onClick={onClose} title="閉じる" className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
       </div>
       <div className="px-6 py-5 space-y-5">
         {TEACHINGS.map((t,i)=>(
@@ -1644,9 +1630,6 @@ const TeachingsModal: React.FC<{onClose:()=>void}> = ({onClose}) => (
             </div>
           </React.Fragment>
         ))}
-      </div>
-      <div className="flex justify-end px-6 py-4 border-t border-gray-100">
-        <button onClick={onClose} className="px-4 py-2 text-sm bg-navy text-white rounded-md hover:bg-navy-dark">閉じる</button>
       </div>
     </div>
   </div>
@@ -1670,7 +1653,7 @@ const TemplatesModal: React.FC<TemplatesModalProps> = ({ onUse, onClose }) => (
           <h2 className="font-semibold text-gray-800">タスクテンプレート</h2>
           <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">有料機能イメージ</span>
         </div>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
+        <button onClick={onClose} title="閉じる" className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
       </div>
       <div className="overflow-y-auto flex-1 px-6 py-4 space-y-3">
         <p className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2 leading-relaxed">
@@ -1697,9 +1680,6 @@ const TemplatesModal: React.FC<TemplatesModalProps> = ({ onUse, onClose }) => (
             </div>
           </div>
         ))}
-      </div>
-      <div className="flex justify-end px-6 py-4 border-t border-gray-100 flex-shrink-0">
-        <button onClick={onClose} className="px-4 py-2 text-sm bg-navy text-white rounded-md hover:bg-navy-dark">閉じる</button>
       </div>
     </div>
   </div>
