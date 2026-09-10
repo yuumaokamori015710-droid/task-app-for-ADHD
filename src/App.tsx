@@ -5,6 +5,7 @@ import {
   AlertTriangle, X, BookOpen, Users, FileSpreadsheet, List, BarChart2,
   History, RotateCcw, Star, StarOff,
   Cloud, CloudOff, Eye, EyeOff, Pin, PinOff, ClipboardList, TrendingUp, GripVertical, Archive,
+  Send, Timer, ListChecks, PauseCircle,
 } from 'lucide-react'
 
 // ============================================================
@@ -13,8 +14,9 @@ import {
 
 type Priority    = 'high' | 'medium' | 'low'
 type ViewMode    = 'list' | 'gantt'
-type BoardGroupMode = 'assignee' | 'priority' | 'due'
+type BoardGroupMode = 'assignee' | 'priority' | 'due' | 'flow'
 type DueGroup = 'overdue' | 'today' | 'thisWeek' | 'later' | 'noDate' | 'completed'
+type FlowGroup = 'handoff' | 'quick' | 'breakdown' | 'deadline' | 'waiting' | 'completed'
 
 interface MiniStep {
   id: string
@@ -39,6 +41,10 @@ interface Task {
   isToday: boolean
   isNow: boolean
   pinned: boolean
+  needsDelegation: boolean
+  isQuickTask: boolean
+  needsBreakdown: boolean
+  waitingOnOther: boolean
   assignee: string
   miniSteps: MiniStep[]
   createdAt: string
@@ -126,6 +132,46 @@ const DUE_GROUP_LABELS: Record<DueGroup, string> = {
   later: '今後',
   noDate: '最終期限なし',
   completed: '完了済み',
+}
+
+const FLOW_GROUPS: FlowGroup[] = ['handoff', 'quick', 'breakdown', 'deadline', 'waiting', 'completed']
+const FLOW_CONFIG: Record<FlowGroup, { label: string; short: string; description: string; badge: string }> = {
+  handoff: {
+    label: '1 相手に渡す',
+    short: '相手に渡す',
+    description: '自分が持っている間に進捗が止まるタスク',
+    badge: 'bg-sky-50 text-sky-700 border-sky-200',
+  },
+  quick: {
+    label: '2 10分以内',
+    short: '10分以内',
+    description: 'その場で決着をつけて頭のノイズを減らす',
+    badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  },
+  breakdown: {
+    label: '3 分解する',
+    short: '分解する',
+    description: '3営業日以内で終わる粒度に割る',
+    badge: 'bg-amber-50 text-amber-700 border-amber-200',
+  },
+  deadline: {
+    label: '4 期限順',
+    short: '期限順',
+    description: '残りは最終期限が早い順に着手する',
+    badge: 'bg-gray-50 text-gray-600 border-gray-200',
+  },
+  waiting: {
+    label: '相手待ち',
+    short: '相手待ち',
+    description: 'ボールは相手側。自分の集中枠から外す',
+    badge: 'bg-violet-50 text-violet-700 border-violet-200',
+  },
+  completed: {
+    label: '完了済み',
+    short: '完了済み',
+    description: '完了したタスク',
+    badge: 'bg-gray-100 text-gray-500 border-gray-200',
+  },
 }
 
 const TEACHINGS = [
@@ -241,6 +287,43 @@ const applyDueGroup = (task: Task, group: DueGroup): Task => {
   return { ...task, completed: false, completedAt: null, dueDate }
 }
 
+const getFlowGroup = (task: Task): FlowGroup => {
+  if (task.completed) return 'completed'
+  if (task.waitingOnOther) return 'waiting'
+  if (task.needsDelegation) return 'handoff'
+  if (task.isQuickTask) return 'quick'
+  if (task.needsBreakdown) return 'breakdown'
+  return 'deadline'
+}
+
+const getFlowRank = (task: Task) => FLOW_GROUPS.indexOf(getFlowGroup(task))
+
+const applyFlowGroup = (task: Task, group: FlowGroup): Task => {
+  if (group === 'completed') {
+    return { ...task, completed: true, completedAt: task.completedAt ?? new Date().toISOString(), isToday: false, isNow: false, waitingOnOther: false }
+  }
+  const reset = { completed: false, completedAt: null, isNow: false }
+  if (group === 'waiting') {
+    return {
+      ...task,
+      ...reset,
+      isToday: false,
+      waitingOnOther: true,
+      needsDelegation: false,
+      isQuickTask: false,
+      needsBreakdown: false,
+    }
+  }
+  return {
+    ...task,
+    ...reset,
+    waitingOnOther: false,
+    needsDelegation: group === 'handoff',
+    isQuickTask: group === 'quick',
+    needsBreakdown: group === 'breakdown',
+  }
+}
+
 const emptyMiniSteps = (): MiniStep[] =>
   Array.from({ length: MIN_MINI_STEPS }, () => ({ id: genId(), text: '', done: false, dueDate: '' }))
 
@@ -260,22 +343,29 @@ const normalizeMiniSteps = (steps: unknown): MiniStep[] => {
   return list
 }
 
-const normalizeTask = (t: Partial<Task>): Task => ({
-  id: t.id ?? genId(),
-  title: t.title ?? '',
-  goal: t.goal ?? '',
-  memo: t.memo ?? '',
-  dueDate: t.dueDate ?? '',
-  priority: t.priority ?? 'medium',
-  completed: !!t.completed,
-  completedAt: t.completedAt ?? null,
-  isToday: !!t.isToday,
-  isNow: !!(t as { isNow?: unknown }).isNow,
-  pinned: !!t.pinned,
-  assignee: t.assignee ?? DEFAULT_ASSIGNEE,
-  miniSteps: normalizeMiniSteps((t as { miniSteps?: unknown }).miniSteps),
-  createdAt: t.createdAt ?? new Date().toISOString(),
-})
+const normalizeTask = (t: Partial<Task>): Task => {
+  const waitingOnOther = !!(t as { waitingOnOther?: unknown }).waitingOnOther
+  return {
+    id: t.id ?? genId(),
+    title: t.title ?? '',
+    goal: t.goal ?? '',
+    memo: t.memo ?? '',
+    dueDate: t.dueDate ?? '',
+    priority: t.priority ?? 'medium',
+    completed: !!t.completed,
+    completedAt: t.completedAt ?? null,
+    isToday: waitingOnOther ? false : !!t.isToday,
+    isNow: waitingOnOther ? false : !!(t as { isNow?: unknown }).isNow,
+    pinned: !!t.pinned,
+    needsDelegation: !!(t as { needsDelegation?: unknown }).needsDelegation,
+    isQuickTask: !!(t as { isQuickTask?: unknown }).isQuickTask,
+    needsBreakdown: !!(t as { needsBreakdown?: unknown }).needsBreakdown,
+    waitingOnOther,
+    assignee: t.assignee ?? DEFAULT_ASSIGNEE,
+    miniSteps: normalizeMiniSteps((t as { miniSteps?: unknown }).miniSteps),
+    createdAt: t.createdAt ?? new Date().toISOString(),
+  }
+}
 
 const normalizeDeletedTask = (t: Partial<DeletedTaskRecord>): DeletedTaskRecord => ({
   ...normalizeTask(t),
@@ -293,6 +383,8 @@ const getCurrentMiniStep = (task: Task) => {
 const sortTasksForWork = (items: Task[]) => [...items].sort((a, b) => {
   if (a.completed !== b.completed) return a.completed ? 1 : -1
   if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+  const flowDiff = getFlowRank(a) - getFlowRank(b)
+  if (flowDiff !== 0) return flowDiff
   const aDue = a.dueDate || '9999-12-31'
   const bDue = b.dueDate || '9999-12-31'
   if (aDue !== bDue) return aDue.localeCompare(bDue)
@@ -410,6 +502,11 @@ const toExportRow = (t: Task) => ({
   '完了日時':    t.completedAt ? fmtDateTime(t.completedAt) : '',
   '今日の3つ':   t.isToday ? 'はい' : 'いいえ',
   '今からやる':  t.isNow ? 'はい' : 'いいえ',
+  '判断フロー':  FLOW_CONFIG[getFlowGroup(t)].label,
+  '相手待ち':    t.waitingOnOther ? 'はい' : 'いいえ',
+  '依頼が必要':  t.needsDelegation ? 'はい' : 'いいえ',
+  '10分以内':    t.isQuickTask ? 'はい' : 'いいえ',
+  '3営業日以上': t.needsBreakdown ? 'はい' : 'いいえ',
   '現在アクション': (() => {
     const current = getCurrentMiniStep(t)
     if (!current) return ''
@@ -468,7 +565,8 @@ const handleExportExcel = (tasks: Task[], history: HistoryEntry[], deletedTasks:
   const taskSheet = XLSX.utils.json_to_sheet(taskRows)
   taskSheet['!cols'] = [
     {wch:32},{wch:40},{wch:12},{wch:40},{wch:8},{wch:12},
-    {wch:8},{wch:20},{wch:10},{wch:10},{wch:32},{wch:48},{wch:12},
+    {wch:8},{wch:20},{wch:10},{wch:10},{wch:14},{wch:10},
+    {wch:12},{wch:10},{wch:12},{wch:32},{wch:48},{wch:12},
   ]
   const stepSheet = XLSX.utils.json_to_sheet(stepRows)
   stepSheet['!cols'] = [{wch:22},{wch:32},{wch:12},{wch:10},{wch:48},{wch:12},{wch:10}]
@@ -477,7 +575,8 @@ const handleExportExcel = (tasks: Task[], history: HistoryEntry[], deletedTasks:
   const deletedSheet = XLSX.utils.json_to_sheet(deletedRows)
   deletedSheet['!cols'] = [
     {wch:32},{wch:40},{wch:12},{wch:40},{wch:8},{wch:12},
-    {wch:8},{wch:20},{wch:10},{wch:10},{wch:32},{wch:48},{wch:12},{wch:20},
+    {wch:8},{wch:20},{wch:10},{wch:10},{wch:14},{wch:10},
+    {wch:12},{wch:10},{wch:12},{wch:32},{wch:48},{wch:12},{wch:20},
   ]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, taskSheet, 'タスク一覧')
@@ -494,7 +593,7 @@ const handleExportExcel = (tasks: Task[], history: HistoryEntry[], deletedTasks:
 const makeNewTask = (): Task => ({
   id:genId(), title:'', goal:'', memo:'', dueDate:'', priority:'medium',
   completed:false, completedAt:null, isToday:false, isNow:false, assignee:DEFAULT_ASSIGNEE,
-  pinned:false,
+  pinned:false, needsDelegation:false, isQuickTask:false, needsBreakdown:false, waitingOnOther:false,
   miniSteps: emptyMiniSteps(),
   createdAt: new Date().toISOString(),
 })
@@ -573,6 +672,8 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
 
   const setMiniStep = (id: string, patch: Partial<MiniStep>) =>
     setForm(p => ({ ...p, miniSteps: normalizeMiniSteps(p.miniSteps).map(s => s.id === id ? { ...s, ...patch } : s) }))
+  const setDecision = (patch: Partial<Task>) =>
+    setForm(p => normalizeTask({ ...p, ...patch }))
   const addMiniStep = () =>
     setForm(p => ({ ...p, miniSteps: [...normalizeMiniSteps(p.miniSteps), { id: genId(), text: '', done: false, dueDate: '' }] }))
   const removeMiniStep = (id: string) =>
@@ -592,6 +693,9 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
       next.splice(to, 0, moved)
       return { ...p, miniSteps: next }
     })
+
+  const flow = getFlowGroup(form)
+  const flowConfig = FLOW_CONFIG[flow]
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -650,6 +754,47 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
                 className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-navy bg-white">
                 <option value="high">高</option><option value="medium">中</option><option value="low">低</option>
               </select>
+            </div>
+          </div>
+
+          {/* 判断フロー */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">判断フロー</label>
+            <div className={`rounded-md border px-3 py-2 text-xs ${flowConfig.badge}`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold">{flowConfig.label}</span>
+                <span className="text-[11px] opacity-80">{flowConfig.description}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <button type="button"
+                onClick={()=>setDecision({ waitingOnOther: !form.waitingOnOther, isToday: form.waitingOnOther ? form.isToday : false, isNow: false })}
+                className={`flex items-center justify-center gap-1.5 rounded-md border px-2 py-2 text-xs transition-colors ${
+                  form.waitingOnOther ? FLOW_CONFIG.waiting.badge : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                }`}>
+                <PauseCircle size={13}/>相手待ち
+              </button>
+              <button type="button"
+                onClick={()=>setDecision({ needsDelegation: !form.needsDelegation })}
+                className={`flex items-center justify-center gap-1.5 rounded-md border px-2 py-2 text-xs transition-colors ${
+                  form.needsDelegation ? FLOW_CONFIG.handoff.badge : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                }`}>
+                <Send size={13}/>依頼が必要
+              </button>
+              <button type="button"
+                onClick={()=>setDecision({ isQuickTask: !form.isQuickTask })}
+                className={`flex items-center justify-center gap-1.5 rounded-md border px-2 py-2 text-xs transition-colors ${
+                  form.isQuickTask ? FLOW_CONFIG.quick.badge : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                }`}>
+                <Timer size={13}/>10分以内
+              </button>
+              <button type="button"
+                onClick={()=>setDecision({ needsBreakdown: !form.needsBreakdown })}
+                className={`flex items-center justify-center gap-1.5 rounded-md border px-2 py-2 text-xs transition-colors ${
+                  form.needsBreakdown ? FLOW_CONFIG.breakdown.badge : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                }`}>
+                <ListChecks size={13}/>分解必要
+              </button>
             </div>
           </div>
 
@@ -751,6 +896,8 @@ const TaskCard: React.FC<TaskCardProps> = ({
   const todayDue   = !task.completed && !!task.dueDate && isToday(task.dueDate)
   const visibleSteps = normalizeMiniSteps(task.miniSteps).filter(s => s.text.trim())
   const completedStepCount = visibleSteps.filter(s => s.done).length
+  const flow = getFlowGroup(task)
+  const flowConfig = FLOW_CONFIG[flow]
 
   return (
     <div className={[
@@ -801,6 +948,11 @@ const TaskCard: React.FC<TaskCardProps> = ({
               {task.isNow && !task.completed && (
                 <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium flex-shrink-0">今から</span>
               )}
+              {!task.completed && (
+                <span className={`text-xs px-1.5 py-0.5 rounded border flex-shrink-0 ${flowConfig.badge}`}>
+                  {flowConfig.short}
+                </span>
+              )}
               {!hideAssignee && task.assignee!==DEFAULT_ASSIGNEE && (
                 <span className="text-xs px-1.5 py-0.5 rounded bg-navy/10 text-navy flex-shrink-0">→ {task.assignee}</span>
               )}
@@ -831,6 +983,66 @@ const TaskCard: React.FC<TaskCardProps> = ({
             )}
             {task.completed && task.completedAt && (
               <p className="text-xs text-gray-400 mt-1">✓ {fmtDateTime(task.completedAt)} に完了</p>
+            )}
+
+            {!task.completed && (
+              <div className="mt-2">
+                <div className={`rounded-md border px-2 py-1.5 text-xs leading-relaxed ${flowConfig.badge}`}>
+                  <div className="font-semibold">{flowConfig.label}</div>
+                  <div className="text-[11px] opacity-80">{flowConfig.description}</div>
+                </div>
+                <div className="grid grid-cols-4 gap-1 mt-1.5">
+                  <button type="button"
+                    onMouseDown={e=>e.stopPropagation()}
+                    onClick={e=>{
+                      e.stopPropagation()
+                      const next = !task.waitingOnOther
+                      onQuickUpdate(task.id, { waitingOnOther: next, isToday: next ? false : task.isToday, isNow: false }, next ? '相手待ちに変更' : '相手待ちを解除')
+                    }}
+                    title="相手待ちにする"
+                    className={`rounded border px-1 py-1 text-[11px] transition-colors ${
+                      task.waitingOnOther ? FLOW_CONFIG.waiting.badge : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                    }`}>
+                    待ち
+                  </button>
+                  <button type="button"
+                    onMouseDown={e=>e.stopPropagation()}
+                    onClick={e=>{
+                      e.stopPropagation()
+                      onQuickUpdate(task.id, { needsDelegation: !task.needsDelegation }, task.needsDelegation ? '依頼必要を解除' : '依頼必要に変更')
+                    }}
+                    title="誰かに依頼が必要"
+                    className={`rounded border px-1 py-1 text-[11px] transition-colors ${
+                      task.needsDelegation ? FLOW_CONFIG.handoff.badge : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                    }`}>
+                    依頼
+                  </button>
+                  <button type="button"
+                    onMouseDown={e=>e.stopPropagation()}
+                    onClick={e=>{
+                      e.stopPropagation()
+                      onQuickUpdate(task.id, { isQuickTask: !task.isQuickTask }, task.isQuickTask ? '10分以内を解除' : '10分以内に変更')
+                    }}
+                    title="10分以内に終わる"
+                    className={`rounded border px-1 py-1 text-[11px] transition-colors ${
+                      task.isQuickTask ? FLOW_CONFIG.quick.badge : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                    }`}>
+                    10分
+                  </button>
+                  <button type="button"
+                    onMouseDown={e=>e.stopPropagation()}
+                    onClick={e=>{
+                      e.stopPropagation()
+                      onQuickUpdate(task.id, { needsBreakdown: !task.needsBreakdown }, task.needsBreakdown ? '分解必要を解除' : '分解必要に変更')
+                    }}
+                    title="3営業日以上かかるので分解が必要"
+                    className={`rounded border px-1 py-1 text-[11px] transition-colors ${
+                      task.needsBreakdown ? FLOW_CONFIG.breakdown.badge : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                    }`}>
+                    分解
+                  </button>
+                </div>
+              </div>
             )}
           </div>
 
@@ -947,19 +1159,24 @@ const AssigneeCols: React.FC<AssigneeColsProps> = ({
     ...columnOrder.filter(a => knownAssignees.includes(a)),
     ...knownAssignees.filter(a => !columnOrder.includes(a)),
   ]
-  const orderedGroups = groupMode === 'priority' ? PRIORITY_ORDER : groupMode === 'due' ? DUE_GROUPS : orderedAssignees
+  const orderedGroups = groupMode === 'priority' ? PRIORITY_ORDER : groupMode === 'due' ? DUE_GROUPS : groupMode === 'flow' ? FLOW_GROUPS : orderedAssignees
   const orderIndex = new Map(orderedGroups.map((a, i) => [a, i]))
   const cols = orderedGroups
     .map(group => ({
       key: group,
-      label: groupMode === 'priority' ? PRIORITY_CONFIG[group as Priority].label : groupMode === 'due' ? DUE_GROUP_LABELS[group as DueGroup] : group,
+      label: groupMode === 'priority' ? PRIORITY_CONFIG[group as Priority].label : groupMode === 'due' ? DUE_GROUP_LABELS[group as DueGroup] : groupMode === 'flow' ? FLOW_CONFIG[group as FlowGroup].label : group,
       tasks: sortTasksForWork(tasks.filter(t =>
         groupMode === 'priority' ? t.priority === group :
         groupMode === 'due' ? getDueGroup(t) === group :
+        groupMode === 'flow' ? getFlowGroup(t) === group :
         t.assignee === group
       )),
     }))
-    .filter(c => groupMode === 'assignee' ? c.tasks.length > 0 || c.key === DEFAULT_ASSIGNEE : c.tasks.length > 0)
+    .filter(c =>
+      groupMode === 'assignee' ? c.tasks.length > 0 || c.key === DEFAULT_ASSIGNEE :
+      groupMode === 'flow' ? c.key !== 'completed' || c.tasks.length > 0 :
+      c.tasks.length > 0
+    )
     .sort((a, b) => {
       if (groupMode !== 'assignee') return (orderIndex.get(a.key) ?? 0) - (orderIndex.get(b.key) ?? 0)
       if (a.key === DEFAULT_ASSIGNEE) return -1
@@ -982,6 +1199,8 @@ const AssigneeCols: React.FC<AssigneeColsProps> = ({
       ? { ...base, priority: targetGroup as Priority }
       : groupMode === 'due'
         ? applyDueGroup(base, targetGroup as DueGroup)
+      : groupMode === 'flow'
+        ? applyFlowGroup(base, targetGroup as FlowGroup)
       : { ...base, assignee: targetGroup }
     const rest    = tasks.filter(t => t.id !== dragTaskId)
     let idx = rest.findIndex(t => t.id === targetId)
@@ -999,6 +1218,8 @@ const AssigneeCols: React.FC<AssigneeColsProps> = ({
       ? { ...base, priority: targetGroup as Priority }
       : groupMode === 'due'
         ? applyDueGroup(base, targetGroup as DueGroup)
+      : groupMode === 'flow'
+        ? applyFlowGroup(base, targetGroup as FlowGroup)
       : { ...base, assignee: targetGroup }
     onReorderTasks([...tasks.filter(t => t.id !== dragTaskId), dragged])
     clear()
@@ -1027,6 +1248,7 @@ const AssigneeCols: React.FC<AssigneeColsProps> = ({
           const isSelf       = groupMode === 'assignee' && key === DEFAULT_ASSIGNEE
           const isPriority   = groupMode === 'priority'
           const isDue        = groupMode === 'due'
+          const isFlow       = groupMode === 'flow'
           const isColTarget  = dropColName === key && !!dragColName && dragColName !== key
           const isDraggingCol = dragColName === key
 
@@ -1048,14 +1270,14 @@ const AssigneeCols: React.FC<AssigneeColsProps> = ({
                 className={[
                   'flex items-center justify-between px-2.5 py-2 rounded-lg mb-2 select-none transition-all',
                   groupMode === 'assignee' ? 'cursor-grab' : '',
-                  isPriority ? PRIORITY_CONFIG[key as Priority].badge : isDue ? 'bg-sky-50 border border-sky-200 text-sky-700' : isSelf ? 'bg-navy/10' : 'bg-amber-50 border border-amber-200',
+                  isPriority ? PRIORITY_CONFIG[key as Priority].badge : isDue ? 'bg-sky-50 border border-sky-200 text-sky-700' : isFlow ? FLOW_CONFIG[key as FlowGroup].badge : isSelf ? 'bg-navy/10' : 'bg-amber-50 border border-amber-200',
                   isColTarget ? 'ring-2 ring-navy shadow-md' : '',
                 ].join(' ')}
               >
                 <div className="flex items-center gap-2">
                   {groupMode === 'assignee' && <span className="text-gray-300 text-base leading-none">⠿</span>}
-                  {isPriority ? <BarChart2 size={13}/> : isDue ? <Calendar size={13}/> : <Users size={13} className={isSelf ? 'text-navy' : 'text-amber-600'} />}
-                  <span className={`text-sm font-semibold ${isPriority || isDue ? '' : isSelf ? 'text-navy' : 'text-amber-700'}`}>
+                  {isPriority ? <BarChart2 size={13}/> : isDue ? <Calendar size={13}/> : isFlow ? <ListChecks size={13}/> : <Users size={13} className={isSelf ? 'text-navy' : 'text-amber-600'} />}
+                  <span className={`text-sm font-semibold ${isPriority || isDue || isFlow ? '' : isSelf ? 'text-navy' : 'text-amber-700'}`}>
                     {isPriority ? `優先度 ${label}` : label}
                   </span>
                 </div>
@@ -1870,7 +2092,7 @@ export default function App() {
     const task = tasks.find(t => t.id === id); if (!task) return
     if (!task.isToday && todayActiveCount >= MAX_TODAY) { setTodayWarn(true); return }
     const adding = !task.isToday
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, isToday: adding, isNow: adding ? t.isNow : false } : t))
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, isToday: adding, isNow: adding ? t.isNow : false, waitingOnOther: adding ? false : t.waitingOnOther } : t))
     addHistory(adding ? 'todayAdded' : 'todayRemoved', task)
   }
 
@@ -1879,7 +2101,7 @@ export default function App() {
     if (task.isToday && task.isNow) return
     if (!task.isToday && todayActiveCount >= MAX_TODAY) { setTodayWarn(true); return }
     setTasks(prev => prev.map(t => t.id === id
-      ? { ...t, isToday: true, isNow: true }
+      ? { ...t, isToday: true, isNow: true, waitingOnOther: false }
       : { ...t, isNow: false }
     ))
     addHistory('nowSet', task, '今からやる枠に移動')
@@ -2187,6 +2409,7 @@ export default function App() {
                   <div className="flex rounded-md overflow-hidden border border-gray-200 bg-white">
                     {([
                       {key:'assignee' as BoardGroupMode,label:'宛先'},
+                      {key:'flow' as BoardGroupMode,label:'判断フロー'},
                       {key:'priority' as BoardGroupMode,label:'優先度'},
                       {key:'due' as BoardGroupMode,label:'最終期限'},
                     ]).map((mode, i)=>(
