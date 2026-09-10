@@ -377,7 +377,7 @@ async function gistLoad(token: string, gistId: string): Promise<AppData | null> 
 /** Gistにデータを保存し、Gist ID を返す（初回は自動作成） */
 async function gistSave(token: string, gistId: string, data: AppData): Promise<string> {
   const body = JSON.stringify({
-    description: '自分専用タスク管理 - 自動バックアップ',
+    description: 'マルチタスク管理 - 自動バックアップ',
     public: false,
     files: { [GIST_FILENAME]: { content: JSON.stringify(data, null, 2) } },
   })
@@ -1997,7 +1997,7 @@ export default function App() {
       <header className="bg-navy text-white px-6 py-4 shadow-sm">
         <div className="max-w-[1800px] mx-auto flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold tracking-wide">自分専用タスク管理</h1>
+            <h1 className="text-lg font-semibold tracking-wide">マルチタスク管理</h1>
             <p className="text-xs text-blue-200 mt-0.5">{dateLabel}</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
