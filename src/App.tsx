@@ -2384,23 +2384,6 @@ export default function App() {
               }
             </section>
 
-            {todayCompletedTasks.length > 0 && (
-              <section className="bg-white border border-gray-100 rounded-lg p-5">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h2 className="font-semibold text-gray-800">今日消化したタスク</h2>
-                    <p className="text-xs text-gray-500 mt-0.5">今日チェックを入れて完了したタスク</p>
-                  </div>
-                  <span className="text-sm font-medium px-2.5 py-1 rounded-full flex-shrink-0 bg-green-50 text-green-700">
-                    {todayCompletedTasks.length}件
-                  </span>
-                </div>
-                <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
-                  {todayCompletedTasks.map(t=><TaskCard key={t.id} task={t} knownAssignees={knownAssignees} {...cardProps}/>)}
-                </div>
-              </section>
-            )}
-
             {/* 全タスク — 宛先別カラム・フル幅 */}
             <section>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -2432,6 +2415,23 @@ export default function App() {
                 {...cardProps}
               />
             </section>
+
+            {todayCompletedTasks.length > 0 && (
+              <section className="bg-white border border-gray-100 rounded-lg p-5">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h2 className="font-semibold text-gray-800">今日消化したタスク</h2>
+                    <p className="text-xs text-gray-500 mt-0.5">今日チェックを入れて完了したタスク</p>
+                  </div>
+                  <span className="text-sm font-medium px-2.5 py-1 rounded-full flex-shrink-0 bg-green-50 text-green-700">
+                    {todayCompletedTasks.length}件
+                  </span>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
+                  {todayCompletedTasks.map(t=><TaskCard key={t.id} task={t} knownAssignees={knownAssignees} {...cardProps}/>)}
+                </div>
+              </section>
+            )}
           </>
         )}
       </main>
