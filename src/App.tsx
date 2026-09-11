@@ -17,6 +17,7 @@ type ViewMode    = 'list' | 'gantt'
 type BoardGroupMode = 'assignee' | 'priority' | 'due' | 'flow'
 type DueGroup = 'overdue' | 'today' | 'thisWeek' | 'later' | 'noDate' | 'completed'
 type FlowGroup = 'handoff' | 'quick' | 'breakdown' | 'deadline' | 'waiting' | 'completed'
+type DueUrgencyLevel = 'none' | 'normal' | 'threeDays' | 'twoDays' | 'tomorrow' | 'today' | 'overdue'
 
 interface MiniStep {
   id: string
@@ -100,6 +101,7 @@ const MAX_TODAY        = 3
 const COMPLETED_HIDE_DAYS = 7
 const MIN_MINI_STEPS = 3
 const DAY_PX = 28
+const MS_PER_DAY = 86_400_000
 
 // 操作種別ごとの表示設定
 const ACTION_CONFIG: Record<HistoryAction, { label: string; icon: React.ReactNode; color: string }> = {
@@ -174,6 +176,112 @@ const FLOW_CONFIG: Record<FlowGroup, { label: string; short: string; description
   },
 }
 
+const DUE_URGENCY_CONFIG: Record<DueUrgencyLevel, {
+  label: string
+  isAlert: boolean
+  cardBorder: string
+  titleText: string
+  text: string
+  chip: string
+  input: string
+  rowBg: string
+  stepRow: string
+  banner: string
+  ganttBar: string
+}> = {
+  none: {
+    label: '',
+    isAlert: false,
+    cardBorder: 'border-gray-200',
+    titleText: 'text-gray-800',
+    text: 'text-gray-400',
+    chip: 'bg-white/70 text-blue-600',
+    input: 'border-gray-200',
+    rowBg: '',
+    stepRow: 'border-transparent',
+    banner: 'bg-gray-100 text-gray-600',
+    ganttBar: '',
+  },
+  normal: {
+    label: '',
+    isAlert: false,
+    cardBorder: 'border-gray-200',
+    titleText: 'text-gray-800',
+    text: 'text-gray-400',
+    chip: 'bg-white/70 text-blue-600',
+    input: 'border-gray-200',
+    rowBg: '',
+    stepRow: 'border-transparent',
+    banner: 'bg-gray-100 text-gray-600',
+    ganttBar: '',
+  },
+  threeDays: {
+    label: 'あと3日',
+    isAlert: true,
+    cardBorder: 'border-yellow-300',
+    titleText: 'text-yellow-800',
+    text: 'text-yellow-700',
+    chip: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+    input: 'border-yellow-300 bg-yellow-50 text-yellow-800',
+    rowBg: 'bg-yellow-50',
+    stepRow: 'border-yellow-200 bg-yellow-50',
+    banner: 'bg-yellow-100 text-yellow-800',
+    ganttBar: 'bg-yellow-400',
+  },
+  twoDays: {
+    label: 'あと2日',
+    isAlert: true,
+    cardBorder: 'border-amber-400',
+    titleText: 'text-amber-800',
+    text: 'text-amber-700',
+    chip: 'bg-amber-100 text-amber-800 border-amber-200',
+    input: 'border-amber-300 bg-amber-50 text-amber-800',
+    rowBg: 'bg-amber-50',
+    stepRow: 'border-amber-200 bg-amber-50',
+    banner: 'bg-amber-100 text-amber-800',
+    ganttBar: 'bg-amber-500',
+  },
+  tomorrow: {
+    label: '明日まで',
+    isAlert: true,
+    cardBorder: 'border-orange-400',
+    titleText: 'text-orange-800',
+    text: 'text-orange-700',
+    chip: 'bg-orange-100 text-orange-800 border-orange-200',
+    input: 'border-orange-300 bg-orange-50 text-orange-800',
+    rowBg: 'bg-orange-50',
+    stepRow: 'border-orange-200 bg-orange-50',
+    banner: 'bg-orange-100 text-orange-800',
+    ganttBar: 'bg-orange-500',
+  },
+  today: {
+    label: '今日が期限',
+    isAlert: true,
+    cardBorder: 'border-red-500 urgent-glow',
+    titleText: 'text-red-700',
+    text: 'text-red-600',
+    chip: 'bg-red-100 text-red-800 border-red-200',
+    input: 'border-red-400 bg-red-50 text-red-800',
+    rowBg: 'bg-red-50',
+    stepRow: 'border-red-200 bg-red-50',
+    banner: 'bg-red-500 text-white',
+    ganttBar: 'bg-red-500',
+  },
+  overdue: {
+    label: '期限切れ',
+    isAlert: true,
+    cardBorder: 'border-red-600 urgent-glow',
+    titleText: 'text-red-800',
+    text: 'text-red-700',
+    chip: 'bg-red-100 text-red-800 border-red-300',
+    input: 'border-red-500 bg-red-50 text-red-800',
+    rowBg: 'bg-red-50',
+    stepRow: 'border-red-300 bg-red-50',
+    banner: 'bg-red-600 text-white',
+    ganttBar: 'bg-red-600',
+  },
+}
+
 const TEACHINGS = [
   { num: '①', title: '入口を減らす',       principle: '並行作業を減らすべし。',          example: '現在進行中のタスク数に厳格な上限を設け、それ以外の依頼は一旦別のストック場所に置く。' },
   { num: '②', title: '制約を先に固定する', principle: '迷いを遮断すべし。',              example: '「今日はこの領域以外には手を出さない」といった制約を最初に設定し、判断の計算資源を節約する。' },
@@ -245,6 +353,34 @@ const isThisWeek = (d: string): boolean => {
 }
 
 const isOverdue  = (d: string) => !!d && d < todayStr()
+
+const dateKeyToUtcMs = (d: string) => {
+  const [year, month, day] = d.split('-').map(Number)
+  if (!year || !month || !day) return null
+  return Date.UTC(year, month - 1, day)
+}
+
+const daysUntil = (d: string) => {
+  const targetMs = dateKeyToUtcMs(d)
+  if (targetMs === null) return null
+  const now = new Date()
+  const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  return Math.round((targetMs - todayMs) / MS_PER_DAY)
+}
+
+const getDueUrgency = (dueDate: string, muted = false) => {
+  if (muted || !dueDate) return { level: 'none' as DueUrgencyLevel, daysLeft: null as number | null, ...DUE_URGENCY_CONFIG.none }
+  const daysLeft = daysUntil(dueDate)
+  const level: DueUrgencyLevel =
+    daysLeft === null ? 'normal' :
+    daysLeft < 0 ? 'overdue' :
+    daysLeft === 0 ? 'today' :
+    daysLeft === 1 ? 'tomorrow' :
+    daysLeft === 2 ? 'twoDays' :
+    daysLeft === 3 ? 'threeDays' :
+    'normal'
+  return { level, daysLeft, ...DUE_URGENCY_CONFIG[level] }
+}
 
 const fmtDate = (d: string) =>
   d ? new Date(d+'T00:00:00').toLocaleDateString('ja-JP',{month:'short',day:'numeric'}) : ''
@@ -892,26 +1028,43 @@ const TaskCard: React.FC<TaskCardProps> = ({
   onComplete, onToday, onPin, onQuickUpdate, onStepToggle, onStepReorder, onEdit, onDelete, hideAssignee=false,
 }) => {
   const pc         = PRIORITY_CONFIG[task.priority]
-  const overdue    = !task.completed && isOverdue(task.dueDate)
-  const todayDue   = !task.completed && !!task.dueDate && isToday(task.dueDate)
   const visibleSteps = normalizeMiniSteps(task.miniSteps).filter(s => s.text.trim())
   const completedStepCount = visibleSteps.filter(s => s.done).length
   const flow = getFlowGroup(task)
   const flowConfig = FLOW_CONFIG[flow]
+  const taskDueUrgency = getDueUrgency(task.dueDate, task.completed)
+  const stepDueAlerts = visibleSteps
+    .filter(step => !step.done && step.dueDate)
+    .map(step => ({ step, urgency: getDueUrgency(step.dueDate) }))
+    .filter(({ urgency }) => urgency.isAlert)
+    .sort((a, b) => (a.urgency.daysLeft ?? 999) - (b.urgency.daysLeft ?? 999))
+  const mostUrgentStep = stepDueAlerts[0]
+  const dueAlerts = [
+    ...(taskDueUrgency.isAlert ? [{ urgency: taskDueUrgency }] : []),
+    ...stepDueAlerts.map(({ urgency }) => ({ urgency })),
+  ].sort((a, b) => (a.urgency.daysLeft ?? 999) - (b.urgency.daysLeft ?? 999))
+  const cardUrgency = dueAlerts[0]?.urgency ?? null
 
   return (
     <div className={[
       'rounded-md overflow-hidden border-2 transition-all',
-      task.completed       ? 'opacity-50 border-gray-200'            : '',
-      todayDue             ? 'border-red-500 urgent-glow'            : (!task.completed && task.isNow ? 'border-emerald-400 shadow-sm' : !task.completed ? 'border-gray-200' : ''),
+      task.completed ? 'opacity-50 border-gray-200' : '',
+      !task.completed && cardUrgency ? cardUrgency.cardBorder : (!task.completed && task.isNow ? 'border-emerald-400 shadow-sm' : !task.completed ? 'border-gray-200' : ''),
     ].join(' ')}>
 
-      {/* 今日締め切りバナー */}
-      {todayDue && (
-        <div className="flex items-center gap-1.5 bg-red-500 text-white text-xs font-bold px-3 py-1.5">
-          <span className="animate-bounce inline-block text-base">🔥</span>
-          最終期限が今日です！
-          <span className="animate-bounce inline-block text-base">🔥</span>
+      {taskDueUrgency.isAlert && (
+        <div className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 ${taskDueUrgency.banner}`}>
+          <AlertTriangle size={13}/>
+          <span>最終期限 {taskDueUrgency.label}</span>
+          <span className="font-medium opacity-90">({fmtDate(task.dueDate)})</span>
+        </div>
+      )}
+
+      {mostUrgentStep && (
+        <div className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 ${mostUrgentStep.urgency.banner}`}>
+          <Calendar size={13}/>
+          <span className="truncate">ネクストアクション期限 {mostUrgentStep.urgency.label}: {mostUrgentStep.step.text}</span>
+          {stepDueAlerts.length > 1 && <span className="flex-shrink-0 opacity-80">+{stepDueAlerts.length - 1}</span>}
         </div>
       )}
 
@@ -932,7 +1085,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 className={`p-0.5 rounded transition-colors ${task.pinned?'text-sky-600 bg-sky-50':'text-gray-300 hover:text-sky-600 hover:bg-sky-50'}`}>
                 <Pin size={13}/>
               </button>
-              <span className={`text-[13px] font-medium leading-snug ${task.completed?'line-through text-gray-400':todayDue?'text-red-700':'text-gray-800'}`}>
+              <span className={`text-[13px] font-medium leading-snug ${task.completed?'line-through text-gray-400':cardUrgency?.titleText ?? 'text-gray-800'}`}>
                 {task.title}
               </span>
               <select value={task.priority}
@@ -971,14 +1124,12 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 onMouseDown={e=>e.stopPropagation()}
                 onClick={e=>e.stopPropagation()}
                 onChange={e=>onQuickUpdate(task.id, { dueDate:e.target.value }, e.target.value ? `最終期限を${fmtDate(e.target.value)}に変更` : '最終期限を解除')}
-                className="min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-navy"/>
+                className={`min-w-0 text-xs border rounded px-1.5 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-navy ${taskDueUrgency.input}`}/>
             </div>
             {task.dueDate && (
-              <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${
-                todayDue ? 'text-red-600' : overdue ? 'text-red-500' : 'text-gray-400'
-              }`}>
+              <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${taskDueUrgency.text}`}>
                 <Calendar size={11}/>
-                <span>最終期限 {fmtDate(task.dueDate)}{overdue&&!todayDue?'（期限切れ）':''}</span>
+                <span>最終期限 {fmtDate(task.dueDate)}{taskDueUrgency.isAlert ? `（${taskDueUrgency.label}）` : ''}</span>
               </div>
             )}
             {task.completed && task.completedAt && (
@@ -1064,15 +1215,14 @@ const TaskCard: React.FC<TaskCardProps> = ({
             </div>
             <div className="space-y-0.5">
               {visibleSteps.map((step, i) => {
-                const stepDueToday = !step.done && !!step.dueDate && isToday(step.dueDate)
-                const stepOverdue = !step.done && isOverdue(step.dueDate)
+                const stepUrgency = getDueUrgency(step.dueDate, step.done || task.completed)
                 return (
                   <div key={step.id}
                     draggable
                     onDragStart={e=>{e.stopPropagation(); e.dataTransfer.setData('text/plain', step.id)}}
                     onDragOver={e=>{e.preventDefault(); e.stopPropagation()}}
                     onDrop={e=>{e.preventDefault(); e.stopPropagation(); onStepReorder(task.id, e.dataTransfer.getData('text/plain'), step.id)}}
-                    className="flex items-start gap-1.5 cursor-grab">
+                    className={`flex items-start gap-1.5 cursor-grab rounded border px-1.5 py-1 transition-colors ${stepUrgency.isAlert ? stepUrgency.stepRow : 'border-transparent'}`}>
                     <button
                       type="button"
                       onMouseDown={e=>e.stopPropagation()}
@@ -1089,11 +1239,12 @@ const TaskCard: React.FC<TaskCardProps> = ({
                         {i + 1}. {step.text}
                       </span>
                       {step.dueDate && (
-                        <span className={`ml-1.5 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] ${
-                          stepDueToday ? 'bg-red-100 text-red-700' : stepOverdue ? 'bg-red-50 text-red-600' : 'bg-white/70 text-blue-600'
+                        <span className={`ml-1.5 inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[11px] ${
+                          step.done || task.completed ? 'border-transparent bg-white/80 text-blue-500' : stepUrgency.isAlert ? stepUrgency.chip : 'border-transparent bg-white/70 text-blue-600'
                         }`}>
                           <Calendar size={10}/>
                           {fmtDate(step.dueDate)}
+                          {!step.done && !task.completed && stepUrgency.isAlert && <span className="font-semibold">{stepUrgency.label}</span>}
                         </span>
                       )}
                     </div>
@@ -1379,14 +1530,14 @@ const GanttChart: React.FC<{tasks:Task[]}> = ({tasks}) => {
         <div className="w-64 flex-shrink-0 border-r border-gray-100 bg-white">
           <div className="h-9 bg-gray-50 border-b border-gray-200"/>
           {withDates.map(task=>{
-            const td = !task.completed&&!!task.dueDate&&isToday(task.dueDate)
+            const dueUrgency = getDueUrgency(task.dueDate, task.completed)
             const current = getCurrentMiniStep(task)
             return (
-              <div key={task.id} className={`px-3 border-b border-gray-100 flex flex-col justify-center ${task.completed?'opacity-40':''} ${td?'bg-red-50':''}`} style={{height:ROW_H}}>
+              <div key={task.id} className={`px-3 border-b border-gray-100 flex flex-col justify-center ${task.completed?'opacity-40':''} ${dueUrgency.rowBg}`} style={{height:ROW_H}}>
                 <div className="flex items-center gap-1.5 min-w-0">
                   {task.isToday&&<span className="w-1.5 h-1.5 rounded-full bg-navy flex-shrink-0"/>}
-                  {td&&<span className="text-red-500 flex-shrink-0">!</span>}
-                  <span className={`text-xs truncate ${td?'text-red-700 font-semibold':'text-gray-700'}`}>{task.title}</span>
+                  {dueUrgency.isAlert&&<AlertTriangle size={12} className={`${dueUrgency.text} flex-shrink-0`}/>}
+                  <span className={`text-xs truncate ${dueUrgency.isAlert ? `${dueUrgency.titleText} font-semibold` : 'text-gray-700'}`}>{task.title}</span>
                 </div>
                 {current && <span className="text-[11px] text-gray-400 truncate">次アクション {current.index}/{current.total}: {current.step.text}</span>}
               </div>
@@ -1412,17 +1563,16 @@ const GanttChart: React.FC<{tasks:Task[]}> = ({tasks}) => {
                 const endX=Math.max(x+DAY_PX,dayOffset(end)*DAY_PX)
                 const barW=endX-x
                 const pc=PRIORITY_CONFIG[task.priority]
-                const overdue=!task.completed&&isOverdue(task.dueDate)
-                const td=!task.completed&&isToday(task.dueDate)
+                const dueUrgency = getDueUrgency(task.dueDate, task.completed)
                 return (
-                  <div key={task.id} className={`relative border-b border-gray-100 ${td?'bg-red-50':''}`} style={{height:ROW_H}}>
-                    <div className={`absolute h-6 top-[13px] rounded flex items-center ${task.completed?pc.barDone+' opacity-50':td?'bg-red-500':pc.bar}`}
+                  <div key={task.id} className={`relative border-b border-gray-100 ${dueUrgency.rowBg}`} style={{height:ROW_H}}>
+                    <div className={`absolute h-6 top-[13px] rounded flex items-center ${task.completed?pc.barDone+' opacity-50':dueUrgency.isAlert?dueUrgency.ganttBar:pc.bar}`}
                       style={{left:x,width:barW}} title={`${task.title}`}>
                       {task.completed&&<Check size={11} className="ml-1.5 text-gray-600 flex-shrink-0"/>}
                     </div>
-                    {overdue&&!td&&<div className="absolute w-1.5 h-6 top-[13px] bg-red-600 rounded-r opacity-70 z-10" style={{left:endX-6}}/>}
-                    <span className={`absolute text-xs top-[15px] whitespace-nowrap ${td?'text-red-600 font-medium':overdue?'text-red-500':'text-gray-400'}`} style={{left:endX+4}}>
-                      {fmtDate(task.dueDate)}
+                    {dueUrgency.level==='overdue'&&<div className="absolute w-1.5 h-6 top-[13px] bg-red-700 rounded-r opacity-80 z-10" style={{left:endX-6}}/>}
+                    <span className={`absolute text-xs top-[15px] whitespace-nowrap ${dueUrgency.isAlert ? `${dueUrgency.text} font-medium` : 'text-gray-400'}`} style={{left:endX+4}}>
+                      {fmtDate(task.dueDate)}{dueUrgency.isAlert ? ` ${dueUrgency.label}` : ''}
                     </span>
                   </div>
                 )
@@ -1434,7 +1584,8 @@ const GanttChart: React.FC<{tasks:Task[]}> = ({tasks}) => {
       <div className="flex items-center gap-4 px-4 py-2.5 border-t border-gray-100 bg-gray-50 text-xs text-gray-400">
         <div className="flex items-center gap-1.5"><div className="w-0.5 h-4 bg-red-400 opacity-75"/><span>今日</span></div>
         <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-navy"/><span>今日の3つ</span></div>
-        <div className="flex items-center gap-1.5"><span className="text-red-500">!</span><span>最終期限が今日</span></div>
+        <div className="flex items-center gap-1.5"><div className="w-5 h-2.5 rounded bg-yellow-400"/><span>3日前から強調</span></div>
+        <div className="flex items-center gap-1.5"><div className="w-5 h-2.5 rounded bg-red-500"/><span>今日/期限切れ</span></div>
       </div>
     </div>
   )
