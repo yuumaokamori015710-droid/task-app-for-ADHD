@@ -5,7 +5,7 @@ import {
   AlertTriangle, X, BookOpen, Users, FileSpreadsheet, List, BarChart2,
   History, RotateCcw, Star, StarOff,
   Cloud, CloudOff, Eye, EyeOff, Pin, PinOff, ClipboardList, TrendingUp, GripVertical, Archive,
-  Send, Timer, ListChecks, PauseCircle,
+  Send, Timer, ListChecks, PauseCircle, Workflow, ArrowRight, Target,
 } from 'lucide-react'
 
 // ============================================================
@@ -137,6 +137,7 @@ const DUE_GROUP_LABELS: Record<DueGroup, string> = {
 }
 
 const FLOW_GROUPS: FlowGroup[] = ['handoff', 'quick', 'breakdown', 'deadline', 'waiting', 'completed']
+const TASK_FLOW_STEPS: FlowGroup[] = ['handoff', 'quick', 'breakdown', 'deadline', 'waiting']
 const FLOW_CONFIG: Record<FlowGroup, { label: string; short: string; description: string; badge: string }> = {
   handoff: {
     label: '1 相手に渡す',
@@ -734,17 +735,180 @@ const makeNewTask = (): Task => ({
   createdAt: new Date().toISOString(),
 })
 
+interface WorkflowTaskNodeProps {
+  label: string
+  task: Task | null
+  current?: boolean
+}
+
+const WorkflowTaskNode: React.FC<WorkflowTaskNodeProps> = ({ label, task, current = false }) => {
+  const due = task ? getDueUrgency(task.dueDate, task.completed) : null
+  const flow = task ? FLOW_CONFIG[getFlowGroup(task)] : null
+  return (
+    <div className={`min-w-0 rounded-lg border px-3 py-2.5 ${current ? 'border-navy bg-navy/5 shadow-sm' : 'border-gray-200 bg-white'}`}>
+      <p className={`text-[11px] font-semibold ${current ? 'text-navy' : 'text-gray-400'}`}>{label}</p>
+      {task ? (
+        <>
+          <p className={`mt-1 text-sm font-semibold leading-snug ${task.completed ? 'line-through text-gray-400' : due?.isAlert ? due.titleText : 'text-gray-800'}`}>
+            {task.title || '未命名タスク'}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1">
+            <span className="rounded bg-navy/10 px-1.5 py-0.5 text-[11px] text-navy">{task.assignee}</span>
+            {flow && <span className={`rounded border px-1.5 py-0.5 text-[11px] ${flow.badge}`}>{flow.short}</span>}
+            {task.dueDate && (
+              <span className={`rounded border px-1.5 py-0.5 text-[11px] ${due?.isAlert ? due.chip : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
+                {fmtDate(task.dueDate)}{due?.isAlert ? ` ${due.label}` : ''}
+              </span>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="mt-2 text-sm text-gray-400">なし</p>
+      )}
+    </div>
+  )
+}
+
+const TaskWorkflowView: React.FC<{ task: Task; allTasks: Task[] }> = ({ task, allTasks }) => {
+  const currentTask = normalizeTask(task)
+  const mergedTasks = sortTasksForWork([...allTasks.filter(t => t.id !== currentTask.id), currentTask])
+  const activeTasks = mergedTasks.filter(t => !t.completed || t.id === currentTask.id)
+  const currentIndex = activeTasks.findIndex(t => t.id === currentTask.id)
+  const previousTask = currentIndex > 0 ? activeTasks[currentIndex - 1] : null
+  const nextTask = currentIndex >= 0 && currentIndex < activeTasks.length - 1 ? activeTasks[currentIndex + 1] : null
+  const assigneeTasks = activeTasks.filter(t => t.assignee === currentTask.assignee)
+  const assigneeIndex = assigneeTasks.findIndex(t => t.id === currentTask.id)
+  const previousAssigneeTask = assigneeIndex > 0 ? assigneeTasks[assigneeIndex - 1] : null
+  const nextAssigneeTask = assigneeIndex >= 0 && assigneeIndex < assigneeTasks.length - 1 ? assigneeTasks[assigneeIndex + 1] : null
+  const currentFlow = getFlowGroup(currentTask)
+  const workflowSteps = currentFlow === 'completed' ? FLOW_GROUPS : TASK_FLOW_STEPS
+  const visibleSteps = normalizeMiniSteps(currentTask.miniSteps).filter(step => step.text.trim())
+  const currentStep = getCurrentMiniStep(currentTask)
+  const doneSteps = visibleSteps.filter(step => step.done).length
+  const taskDue = getDueUrgency(currentTask.dueDate, currentTask.completed)
+
+  return (
+    <div className="px-6 py-5 space-y-5">
+      <section>
+        <div className="flex items-center gap-2 mb-2">
+          <Workflow size={16} className="text-navy"/>
+          <h3 className="text-sm font-semibold text-gray-800">前後関係</h3>
+        </div>
+        <div className="grid gap-2 md:grid-cols-[1fr_auto_1.15fr_auto_1fr] md:items-stretch">
+          <WorkflowTaskNode label="前にやる" task={previousTask}/>
+          <div className="hidden md:flex items-center justify-center text-gray-300"><ArrowRight size={18}/></div>
+          <WorkflowTaskNode label="このタスク" task={currentTask} current/>
+          <div className="hidden md:flex items-center justify-center text-gray-300"><ArrowRight size={18}/></div>
+          <WorkflowTaskNode label="次にやる" task={nextTask}/>
+        </div>
+        <div className="mt-2 grid gap-2 md:grid-cols-[1fr_auto_1.15fr_auto_1fr] md:items-stretch">
+          <WorkflowTaskNode label={`${currentTask.assignee} の前`} task={previousAssigneeTask}/>
+          <div className="hidden md:flex items-center justify-center text-gray-300"><ArrowRight size={18}/></div>
+          <WorkflowTaskNode label={`${currentTask.assignee} の現在`} task={currentTask} current/>
+          <div className="hidden md:flex items-center justify-center text-gray-300"><ArrowRight size={18}/></div>
+          <WorkflowTaskNode label={`${currentTask.assignee} の次`} task={nextAssigneeTask}/>
+        </div>
+      </section>
+
+      <section>
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div className="flex items-center gap-2">
+            <ListChecks size={16} className="text-navy"/>
+            <h3 className="text-sm font-semibold text-gray-800">判断フロー</h3>
+          </div>
+          {currentTask.dueDate && (
+            <span className={`rounded border px-2 py-0.5 text-xs ${taskDue.isAlert ? taskDue.chip : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
+              最終期限 {fmtDate(currentTask.dueDate)}{taskDue.isAlert ? ` ${taskDue.label}` : ''}
+            </span>
+          )}
+        </div>
+        <div className="grid gap-2 md:grid-cols-5">
+          {workflowSteps.map((group, i) => {
+            const config = FLOW_CONFIG[group]
+            const active = currentFlow === group
+            return (
+              <div key={group} className={`rounded-lg border px-3 py-3 ${active ? `${config.badge} ring-2 ring-navy/30` : 'border-gray-200 bg-white text-gray-500'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${active ? 'bg-white/80 text-navy' : 'bg-gray-100 text-gray-400'}`}>
+                    {i + 1}
+                  </span>
+                  {active && <span className="text-[11px] font-semibold text-navy">現在地</span>}
+                </div>
+                <p className="mt-2 text-xs font-semibold">{config.short}</p>
+                <p className="mt-1 text-[11px] leading-relaxed opacity-80">{config.description}</p>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      <section>
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div className="flex items-center gap-2">
+            <Target size={16} className="text-navy"/>
+            <h3 className="text-sm font-semibold text-gray-800">ネクストアクションの流れ</h3>
+          </div>
+          <span className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700">{doneSteps}/{visibleSteps.length}</span>
+        </div>
+        {visibleSteps.length ? (
+          <div className="space-y-2">
+            {visibleSteps.map((step, i) => {
+              const urgency = getDueUrgency(step.dueDate, step.done || currentTask.completed)
+              const isCurrent = currentStep?.step.id === step.id && !currentStep.allDone
+              return (
+                <div key={step.id} className={`flex gap-3 rounded-lg border px-3 py-2.5 ${isCurrent ? 'border-navy bg-navy/5 shadow-sm' : urgency.isAlert ? urgency.stepRow : 'border-gray-200 bg-white'}`}>
+                  <div className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                    step.done ? 'bg-navy text-white' : isCurrent ? 'bg-white text-navy border border-navy' : 'bg-gray-100 text-gray-400'
+                  }`}>
+                    {step.done ? <Check size={12}/> : i + 1}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <p className={`text-sm leading-snug ${step.done ? 'line-through text-gray-400' : 'text-gray-800'}`}>{step.text}</p>
+                      {isCurrent && <span className="rounded bg-navy px-1.5 py-0.5 text-[11px] font-semibold text-white">今ここ</span>}
+                    </div>
+                    {step.dueDate && (
+                      <span className={`mt-1 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] ${
+                        step.done ? 'border-transparent bg-gray-50 text-gray-400' : urgency.isAlert ? urgency.chip : 'border-gray-200 bg-gray-50 text-gray-500'
+                      }`}>
+                        <Calendar size={10}/>
+                        期限 {fmtDate(step.dueDate)}{!step.done && urgency.isAlert ? ` ${urgency.label}` : ''}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-6 text-center text-sm text-gray-400">ネクストアクション未入力</div>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-3">
+        <div className="flex items-center gap-2 mb-1">
+          <Target size={15} className="text-emerald-700"/>
+          <h3 className="text-sm font-semibold text-emerald-800">ゴール</h3>
+        </div>
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-emerald-900">{currentTask.goal || '未入力'}</p>
+      </section>
+    </div>
+  )
+}
+
 interface TaskModalProps {
   initial: Task | null
   isDraft?: boolean
   knownAssignees: string[]
+  allTasks: Task[]
   onSave: (t: Task) => void
   onClose: () => void
 }
 
-const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAssignees, onSave, onClose }) => {
+const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAssignees, allTasks, onSave, onClose }) => {
   const [form, setForm] = useState<Task>(() => normalizeTask(initial ?? makeNewTask()))
   const [dragStepId, setDragStepId] = useState<string | null>(null)
+  const [showWorkflow, setShowWorkflow] = useState(false)
   const [autoSaveStatus, setAutoSaveStatus] = useState<'needsTitle'|'saving'|'saved'>(
     initial && !isDraft ? 'saved' : 'needsTitle'
   )
@@ -832,17 +996,31 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
 
   const flow = getFlowGroup(form)
   const flowConfig = FLOW_CONFIG[flow]
+  const previewTask = buildSaveTask()
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-xl max-h-[92vh] overflow-y-auto">
+      <div className={`bg-white rounded-lg shadow-xl w-full max-h-[92vh] overflow-y-auto ${showWorkflow ? 'max-w-5xl' : 'max-w-xl'}`}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
-            <h2 className="font-semibold text-gray-800">{initial && !isDraft ? 'タスクを編集' : 'タスクを追加'}</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{autoSaveLabel}</p>
+            <h2 className="font-semibold text-gray-800">{showWorkflow ? 'ワークフロー' : initial && !isDraft ? 'タスクを編集' : 'タスクを追加'}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{showWorkflow ? previewTask.title || '未命名タスク' : autoSaveLabel}</p>
           </div>
-          <button onClick={handleClose} title="閉じる" className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={()=>setShowWorkflow(v=>!v)}
+              title={showWorkflow ? '編集に戻る' : 'ワークフローを見る'}
+              className={`p-1.5 rounded-md transition-colors ${showWorkflow ? 'bg-navy text-white' : 'text-gray-400 hover:text-navy hover:bg-navy/10'}`}
+            >
+              {showWorkflow ? <Pencil size={17}/> : <Workflow size={17}/>}
+            </button>
+            <button onClick={handleClose} title="閉じる" className="text-gray-400 hover:text-gray-600 p-1"><X size={18}/></button>
+          </div>
         </div>
+        {showWorkflow ? (
+          <TaskWorkflowView task={previewTask} allTasks={allTasks}/>
+        ) : (
         <div className="px-6 py-5 space-y-4">
 
           {/* タスク名 */}
@@ -1002,6 +1180,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
               className="w-full min-h-28 border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-navy resize-y"/>
           </div>
         </div>
+        )}
 
       </div>
     </div>
@@ -2598,7 +2777,7 @@ export default function App() {
 
       {/* Modals */}
       {showModal && (
-        <TaskModal initial={editTask} knownAssignees={knownAssignees}
+        <TaskModal initial={editTask} knownAssignees={knownAssignees} allTasks={tasks}
           isDraft={!!editTask && !tasks.some(t=>t.id===editTask.id)}
           onSave={handleSave} onClose={()=>{setShowModal(false);setEditTask(null)}}/>
       )}
