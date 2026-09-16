@@ -835,7 +835,6 @@ const TaskWorkflowView: React.FC<{ task: Task; allTasks: Task[] }> = ({ task, al
                   {active && <span className="text-[11px] font-semibold text-navy">現在地</span>}
                 </div>
                 <p className="mt-2 text-xs font-semibold">{config.short}</p>
-                <p className="mt-1 text-[11px] leading-relaxed opacity-80">{config.description}</p>
               </div>
             )
           })}
@@ -1077,7 +1076,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
             <div className={`rounded-md border px-3 py-2 text-xs ${flowConfig.badge}`}>
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold">{flowConfig.label}</span>
-                <span className="text-[11px] opacity-80">{flowConfig.description}</span>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2 mt-2">
@@ -1289,91 +1287,6 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 <span className="text-xs px-1.5 py-0.5 rounded bg-navy/10 text-navy flex-shrink-0">→ {task.assignee}</span>
               )}
             </div>
-            <div className="mt-1 grid gap-1 sm:grid-cols-2">
-              <select value={task.assignee}
-                title="宛先を変更"
-                onMouseDown={e=>e.stopPropagation()}
-                onClick={e=>e.stopPropagation()}
-                onChange={e=>onQuickUpdate(task.id, { assignee:e.target.value }, `宛先を${e.target.value}に変更`)}
-                className="min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-navy">
-                {knownAssignees.map(a=><option key={a} value={a}>{a}</option>)}
-              </select>
-              <input type="date" value={task.dueDate}
-                title="最終期限を変更"
-                onMouseDown={e=>e.stopPropagation()}
-                onClick={e=>e.stopPropagation()}
-                onChange={e=>onQuickUpdate(task.id, { dueDate:e.target.value }, e.target.value ? `最終期限を${fmtDate(e.target.value)}に変更` : '最終期限を解除')}
-                className={`min-w-0 text-xs border rounded px-1.5 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-navy ${taskDueUrgency.input}`}/>
-            </div>
-            {task.dueDate && (
-              <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${taskDueUrgency.text}`}>
-                <Calendar size={11}/>
-                <span>最終期限 {fmtDate(task.dueDate)}{taskDueUrgency.isAlert ? `（${taskDueUrgency.label}）` : ''}</span>
-              </div>
-            )}
-            {task.completed && task.completedAt && (
-              <p className="text-xs text-gray-400 mt-1">✓ {fmtDateTime(task.completedAt)} に完了</p>
-            )}
-
-            {!task.completed && (
-              <div className="mt-2">
-                <div className={`rounded-md border px-2 py-1.5 text-xs leading-relaxed ${flowConfig.badge}`}>
-                  <div className="font-semibold">{flowConfig.label}</div>
-                  <div className="text-[11px] opacity-80">{flowConfig.description}</div>
-                </div>
-                <div className="grid grid-cols-4 gap-1 mt-1.5">
-                  <button type="button"
-                    onMouseDown={e=>e.stopPropagation()}
-                    onClick={e=>{
-                      e.stopPropagation()
-                      const next = !task.waitingOnOther
-                      onQuickUpdate(task.id, { waitingOnOther: next, isToday: next ? false : task.isToday, isNow: false }, next ? '相手待ちに変更' : '相手待ちを解除')
-                    }}
-                    title="相手待ちにする"
-                    className={`rounded border px-1 py-1 text-[11px] transition-colors ${
-                      task.waitingOnOther ? FLOW_CONFIG.waiting.badge : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
-                    }`}>
-                    待ち
-                  </button>
-                  <button type="button"
-                    onMouseDown={e=>e.stopPropagation()}
-                    onClick={e=>{
-                      e.stopPropagation()
-                      onQuickUpdate(task.id, { needsDelegation: !task.needsDelegation }, task.needsDelegation ? '依頼必要を解除' : '依頼必要に変更')
-                    }}
-                    title="誰かに依頼が必要"
-                    className={`rounded border px-1 py-1 text-[11px] transition-colors ${
-                      task.needsDelegation ? FLOW_CONFIG.handoff.badge : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
-                    }`}>
-                    依頼
-                  </button>
-                  <button type="button"
-                    onMouseDown={e=>e.stopPropagation()}
-                    onClick={e=>{
-                      e.stopPropagation()
-                      onQuickUpdate(task.id, { isQuickTask: !task.isQuickTask }, task.isQuickTask ? '10分以内を解除' : '10分以内に変更')
-                    }}
-                    title="10分以内に終わる"
-                    className={`rounded border px-1 py-1 text-[11px] transition-colors ${
-                      task.isQuickTask ? FLOW_CONFIG.quick.badge : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
-                    }`}>
-                    10分
-                  </button>
-                  <button type="button"
-                    onMouseDown={e=>e.stopPropagation()}
-                    onClick={e=>{
-                      e.stopPropagation()
-                      onQuickUpdate(task.id, { needsBreakdown: !task.needsBreakdown }, task.needsBreakdown ? '分解必要を解除' : '分解必要に変更')
-                    }}
-                    title="3営業日以上かかるので分解が必要"
-                    className={`rounded border px-1 py-1 text-[11px] transition-colors ${
-                      task.needsBreakdown ? FLOW_CONFIG.breakdown.badge : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
-                    }`}>
-                    分解
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="flex items-center gap-0.5 flex-shrink-0">
@@ -1386,6 +1299,91 @@ const TaskCard: React.FC<TaskCardProps> = ({
             <button onClick={()=>onDelete(task.id)} className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={14}/></button>
           </div>
         </div>
+
+        <div className="mt-2 grid gap-1 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+          <select value={task.assignee}
+            title="宛先を変更"
+            onMouseDown={e=>e.stopPropagation()}
+            onClick={e=>e.stopPropagation()}
+            onChange={e=>onQuickUpdate(task.id, { assignee:e.target.value }, `宛先を${e.target.value}に変更`)}
+            className="w-full min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-navy">
+            {knownAssignees.map(a=><option key={a} value={a}>{a}</option>)}
+          </select>
+          <input type="date" value={task.dueDate}
+            title="最終期限を変更"
+            onMouseDown={e=>e.stopPropagation()}
+            onClick={e=>e.stopPropagation()}
+            onChange={e=>onQuickUpdate(task.id, { dueDate:e.target.value }, e.target.value ? `最終期限を${fmtDate(e.target.value)}に変更` : '最終期限を解除')}
+            className={`w-full min-w-0 text-xs border rounded px-1.5 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-navy ${taskDueUrgency.input}`}/>
+        </div>
+        {task.dueDate && (
+          <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${taskDueUrgency.text}`}>
+            <Calendar size={11}/>
+            <span>最終期限 {fmtDate(task.dueDate)}{taskDueUrgency.isAlert ? `（${taskDueUrgency.label}）` : ''}</span>
+          </div>
+        )}
+        {task.completed && task.completedAt && (
+          <p className="text-xs text-gray-400 mt-1">✓ {fmtDateTime(task.completedAt)} に完了</p>
+        )}
+
+        {!task.completed && (
+          <div className="mt-2">
+            <div className={`rounded-md border px-2 py-1.5 text-xs ${flowConfig.badge}`}>
+              <div className="font-semibold">{flowConfig.label}</div>
+            </div>
+            <div className="grid grid-cols-4 gap-1 mt-1.5">
+              <button type="button"
+                onMouseDown={e=>e.stopPropagation()}
+                onClick={e=>{
+                  e.stopPropagation()
+                  const next = !task.waitingOnOther
+                  onQuickUpdate(task.id, { waitingOnOther: next, isToday: next ? false : task.isToday, isNow: false }, next ? '相手待ちに変更' : '相手待ちを解除')
+                }}
+                title="相手待ちにする"
+                className={`rounded border px-1 py-1 text-[11px] transition-colors ${
+                  task.waitingOnOther ? FLOW_CONFIG.waiting.badge : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                }`}>
+                待ち
+              </button>
+              <button type="button"
+                onMouseDown={e=>e.stopPropagation()}
+                onClick={e=>{
+                  e.stopPropagation()
+                  onQuickUpdate(task.id, { needsDelegation: !task.needsDelegation }, task.needsDelegation ? '依頼必要を解除' : '依頼必要に変更')
+                }}
+                title="誰かに依頼が必要"
+                className={`rounded border px-1 py-1 text-[11px] transition-colors ${
+                  task.needsDelegation ? FLOW_CONFIG.handoff.badge : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                }`}>
+                依頼
+              </button>
+              <button type="button"
+                onMouseDown={e=>e.stopPropagation()}
+                onClick={e=>{
+                  e.stopPropagation()
+                  onQuickUpdate(task.id, { isQuickTask: !task.isQuickTask }, task.isQuickTask ? '10分以内を解除' : '10分以内に変更')
+                }}
+                title="10分以内に終わる"
+                className={`rounded border px-1 py-1 text-[11px] transition-colors ${
+                  task.isQuickTask ? FLOW_CONFIG.quick.badge : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                }`}>
+                10分
+              </button>
+              <button type="button"
+                onMouseDown={e=>e.stopPropagation()}
+                onClick={e=>{
+                  e.stopPropagation()
+                  onQuickUpdate(task.id, { needsBreakdown: !task.needsBreakdown }, task.needsBreakdown ? '分解必要を解除' : '分解必要に変更')
+                }}
+                title="3営業日以上かかるので分解が必要"
+                className={`rounded border px-1 py-1 text-[11px] transition-colors ${
+                  task.needsBreakdown ? FLOW_CONFIG.breakdown.badge : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                }`}>
+                分解
+              </button>
+            </div>
+          </div>
+        )}
 
         {visibleSteps.length > 0 && (
           <div className="mt-2.5 rounded px-2 py-1.5 text-xs leading-relaxed bg-blue-50 text-blue-700">
