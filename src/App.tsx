@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import * as XLSX from 'xlsx'
+import { withMiniSteps } from './taskDeadlines'
 import {
   Plus, Pencil, Trash2, Check, Calendar, Download,
   AlertTriangle, X, BookOpen, Users, FileSpreadsheet, List, BarChart2,
@@ -970,15 +971,15 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
   }, [form, effectiveAssignee, onSave])
 
   const setMiniStep = (id: string, patch: Partial<MiniStep>) =>
-    setForm(p => ({ ...p, miniSteps: normalizeMiniSteps(p.miniSteps).map(s => s.id === id ? { ...s, ...patch } : s) }))
+    setForm(p => withMiniSteps(p, normalizeMiniSteps(p.miniSteps).map(s => s.id === id ? { ...s, ...patch } : s)))
   const setDecision = (patch: Partial<Task>) =>
     setForm(p => normalizeTask({ ...p, ...patch }))
   const addMiniStep = () =>
-    setForm(p => ({ ...p, miniSteps: [...normalizeMiniSteps(p.miniSteps), { id: genId(), text: '', done: false, dueDate: '' }] }))
+    setForm(p => withMiniSteps(p, [...normalizeMiniSteps(p.miniSteps), { id: genId(), text: '', done: false, dueDate: '' }]))
   const removeMiniStep = (id: string) =>
     setForm(p => {
       const next = normalizeMiniSteps(p.miniSteps).filter(s => s.id !== id)
-      return { ...p, miniSteps: normalizeMiniSteps(next) }
+      return withMiniSteps(p, normalizeMiniSteps(next))
     })
   const reorderMiniStep = (targetId: string) =>
     setForm(p => {
@@ -990,7 +991,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
       const next = [...steps]
       const [moved] = next.splice(from, 1)
       next.splice(to, 0, moved)
-      return { ...p, miniSteps: next }
+      return withMiniSteps(p, next)
     })
 
   const flow = getFlowGroup(form)
@@ -2476,10 +2477,9 @@ export default function App() {
     const steps = normalizeMiniSteps(task.miniSteps)
     const step = steps.find(s => s.id === stepId); if (!step) return
     const nextDone = !step.done
-    setTasks(prev => prev.map(t => t.id === taskId ? {
-      ...t,
-      miniSteps: normalizeMiniSteps(t.miniSteps).map(s => s.id === stepId ? { ...s, done: nextDone } : s),
-    } : t))
+    setTasks(prev => prev.map(t => t.id === taskId ? withMiniSteps(t,
+      normalizeMiniSteps(t.miniSteps).map(s => s.id === stepId ? { ...s, done: nextDone } : s),
+    ) : t))
     addHistory('updated', task, `アクション${nextDone ? '完了' : '未完了'}: ${step.text}`)
   }
 
@@ -2493,7 +2493,7 @@ export default function App() {
     const nextSteps = [...steps]
     const [moved] = nextSteps.splice(from, 1)
     nextSteps.splice(to, 0, moved)
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, miniSteps: nextSteps } : t))
+    setTasks(prev => prev.map(t => t.id === taskId ? withMiniSteps(t, nextSteps) : t))
     addHistory('updated', task, `アクション並び替え: ${moved.text || '未入力アクション'}`)
   }
 
