@@ -99,7 +99,6 @@ const STORAGE_KEY      = 'task-app-data'
 const SETTINGS_KEY     = 'task-app-settings'
 const GIST_FILENAME    = 'neumann-task-app.json'
 const MAX_TODAY        = 3
-const COMPLETED_HIDE_DAYS = 7
 const MIN_MINI_STEPS = 3
 const DAY_PX = 28
 const MS_PER_DAY = 86_400_000
@@ -338,8 +337,7 @@ const TASK_TEMPLATES: TaskTemplate[] = [
 
 const genId    = () => `${Date.now()}-${Math.random().toString(36).slice(2,9)}`
 // ローカル日付を使う（toISOStringはUTCなのでタイムゾーンのズレが生じる）
-const todayStr = () => {
-  const d = new Date()
+const todayStr = (d = new Date()) => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 const isToday  = (d: string) => d === todayStr()
@@ -528,13 +526,6 @@ const sortTasksForWork = (items: Task[]) => [...items].sort((a, b) => {
   if (aDue !== bDue) return aDue.localeCompare(bDue)
   return a.createdAt.localeCompare(b.createdAt)
 })
-
-const isHiddenCompletedTask = (task: Task) => {
-  if (!task.completed || !task.completedAt) return false
-  const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() - COMPLETED_HIDE_DAYS)
-  return new Date(task.completedAt) < cutoff
-}
 
 const emptyData = (): AppData => ({ tasks: [], history: [], columnOrder: [], deletedTasks: [] })
 
@@ -1113,13 +1104,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
 
           {/* ネクストアクション */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-sm font-medium text-gray-700">ネクストアクション</label>
-              <button type="button" onClick={addMiniStep}
-                className="flex items-center gap-1 text-xs text-navy hover:text-navy-dark">
-                <Plus size={13}/>アクション追加
-              </button>
-            </div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">ネクストアクション</label>
             <div className="space-y-2">
               {miniSteps.map((step, i) => (
                 <div key={step.id}
@@ -1157,6 +1142,10 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
                 </div>
               ))}
             </div>
+            <button type="button" onClick={addMiniStep}
+              className="mt-2 flex items-center gap-1 text-xs text-navy hover:text-navy-dark">
+              <Plus size={13}/>アクション追加
+            </button>
           </div>
 
           {/* ゴール */}
@@ -2382,16 +2371,18 @@ export default function App() {
     ...Array.from(new Set(tasks.map(t=>t.assignee).filter((a):a is string=>!!a&&a!==DEFAULT_ASSIGNEE))).sort()
   ]
 
-  const cardVisibleTasks = tasks.filter(t => !isHiddenCompletedTask(t))
-  const todayTasks       = sortTasksForWork(cardVisibleTasks.filter(t=>t.isToday))
-  const todayActiveCount = todayTasks.filter(t=>!t.completed).length
-  const nowTask          = todayTasks.find(t=>t.isNow && !t.completed) ?? null
+  const activeTasks      = tasks.filter(t=>!t.completed)
+  const todayTasks       = sortTasksForWork(activeTasks.filter(t=>t.isToday))
+  const todayActiveCount = todayTasks.length
+  const nowTask          = todayTasks.find(t=>t.isNow) ?? null
   const todayQueueTasks  = todayTasks.filter(t=>t.id !== nowTask?.id)
-  const todayCompletedTasks = sortTasksForWork(cardVisibleTasks.filter(t=>t.completed && t.completedAt?.startsWith(todayStr())))
+  const todayCompletedTasks = sortTasksForWork(tasks.filter(t=>
+    t.completed && t.completedAt && todayStr(new Date(t.completedAt)) === todayStr()
+  ))
   const completedArchiveTasks = sortTasksForWork(tasks.filter(t=>t.completed))
   const archiveCount = completedArchiveTasks.length + deletedTasks.length
 
-  const allSectionTasks = sortTasksForWork(cardVisibleTasks.filter(t=>!t.isToday && !todayCompletedTasks.some(done=>done.id===t.id)))
+  const allSectionTasks = sortTasksForWork(activeTasks.filter(t=>!t.isToday))
 
   const handleSave = (task: Task) => {
     const nextTask = normalizeTask(task)
@@ -2638,7 +2629,7 @@ export default function App() {
               <h2 className="font-semibold text-gray-800">ガントチャート</h2>
               <p className="text-xs text-gray-500 mt-0.5">最終期限と現在アクションを時系列で確認</p>
             </div>
-            <GanttChart tasks={tasks}/>
+            <GanttChart tasks={activeTasks}/>
           </section>
         )}
 
