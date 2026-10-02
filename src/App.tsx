@@ -1143,8 +1143,9 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
               ))}
             </div>
             <button type="button" onClick={addMiniStep}
-              className="mt-2 flex items-center gap-1 text-xs text-navy hover:text-navy-dark">
-              <Plus size={13}/>アクション追加
+              title="アクション追加" aria-label="アクション追加"
+              className="mx-auto mt-2 flex h-11 w-11 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy">
+              <Plus size={24}/>
             </button>
           </div>
 
@@ -1199,6 +1200,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
   const completedStepCount = visibleSteps.filter(s => s.done).length
   const flow = getFlowGroup(task)
   const flowConfig = FLOW_CONFIG[flow]
+  const isWaiting = flow === 'waiting'
   const taskDueUrgency = getDueUrgency(task.dueDate, task.completed)
   const stepDueAlerts = visibleSteps
     .filter(step => !step.done && step.dueDate)
@@ -1216,7 +1218,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
     <div className={[
       'rounded-md overflow-hidden border-2 transition-all',
       task.completed ? 'opacity-50 border-gray-200' : '',
-      !task.completed && cardUrgency ? cardUrgency.cardBorder : (!task.completed && task.isNow ? 'border-emerald-400 shadow-sm' : !task.completed ? 'border-gray-200' : ''),
+      !task.completed && cardUrgency ? cardUrgency.cardBorder : (isWaiting ? 'border-violet-400' : !task.completed && task.isNow ? 'border-emerald-400 shadow-sm' : !task.completed ? 'border-gray-200' : ''),
     ].join(' ')}>
 
       {taskDueUrgency.isAlert && (
@@ -1235,7 +1237,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
         </div>
       )}
 
-      <div className="bg-white px-3 py-2.5">
+      <div className={`px-3 py-2.5 ${isWaiting ? 'bg-violet-100' : 'bg-white'}`}>
         {/* 上段：チェックボックス ＋ タイトル等 ＋ アクション */}
         <div className="flex gap-2 items-start">
           <button onClick={()=>onComplete(task.id)}
@@ -1376,7 +1378,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
         )}
 
         {visibleSteps.length > 0 && (
-          <div className="mt-2.5 rounded px-2 py-1.5 text-xs leading-relaxed bg-blue-50 text-blue-700">
+          <div className={`mt-2.5 rounded px-2 py-1.5 text-xs leading-relaxed ${isWaiting ? 'bg-white/60 text-violet-800' : 'bg-blue-50 text-blue-700'}`}>
             <div className="font-semibold mb-1">
               ネクストアクション完了 {completedStepCount}/{visibleSteps.length}
             </div>
@@ -1423,7 +1425,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
         )}
 
         {task.goal && (
-          <div className="mt-2 text-xs bg-emerald-50 text-emerald-800 rounded px-3 py-2 leading-relaxed">
+          <div className={`mt-2 text-xs text-emerald-800 rounded px-3 py-2 leading-relaxed ${isWaiting ? 'bg-white/60' : 'bg-emerald-50'}`}>
             <div className="font-semibold mb-0.5">ゴール</div>
             <p className="whitespace-pre-wrap">{task.goal}</p>
           </div>
@@ -1431,7 +1433,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
 
         {/* メモ：カード全幅で表示 */}
         {task.memo && (
-          <div className="mt-2 text-xs text-gray-600 bg-gray-50 rounded px-3 py-2 whitespace-pre-wrap leading-relaxed">
+          <div className={`mt-2 text-xs text-gray-600 rounded px-3 py-2 whitespace-pre-wrap leading-relaxed ${isWaiting ? 'bg-white/60' : 'bg-gray-50'}`}>
             {task.memo}
           </div>
         )}
