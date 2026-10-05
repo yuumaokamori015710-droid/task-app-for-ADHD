@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { withMiniSteps } from './taskDeadlines'
+import { reorderSteps } from './stepReorder'
+import type { StepDropPosition } from './stepReorder'
+import { useMiniStepDrag } from './useMiniStepDrag'
 import {
   Plus, Pencil, Trash2, Check, Calendar, Download,
   AlertTriangle, X, BookOpen, Users, FileSpreadsheet, List, BarChart2,
@@ -896,9 +899,13 @@ interface TaskModalProps {
   onClose: () => void
 }
 
+const StepDropIndicator: React.FC<{ position?: StepDropPosition }> = ({ position }) => position ? (
+  <div role="separator" aria-label="挿入位置" data-position={position}
+    className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded bg-sky-500 ${position === 'before' ? '-top-1' : '-bottom-1'}`}/>
+) : null
+
 const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAssignees, allTasks, onSave, onClose }) => {
   const [form, setForm] = useState<Task>(() => normalizeTask(initial ?? makeNewTask()))
-  const [dragStepId, setDragStepId] = useState<string | null>(null)
   const [showWorkflow, setShowWorkflow] = useState(false)
   const [autoSaveStatus, setAutoSaveStatus] = useState<'needsTitle'|'saving'|'saved'>(
     initial && !isDraft ? 'saved' : 'needsTitle'
@@ -972,18 +979,13 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
       const next = normalizeMiniSteps(p.miniSteps).filter(s => s.id !== id)
       return withMiniSteps(p, normalizeMiniSteps(next))
     })
-  const reorderMiniStep = (targetId: string) =>
+  const stepDrag = useMiniStepDrag((draggedId, targetId, position) =>
     setForm(p => {
-      if (!dragStepId || dragStepId === targetId) return p
       const steps = normalizeMiniSteps(p.miniSteps)
-      const from = steps.findIndex(s => s.id === dragStepId)
-      const to = steps.findIndex(s => s.id === targetId)
-      if (from < 0 || to < 0) return p
-      const next = [...steps]
-      const [moved] = next.splice(from, 1)
-      next.splice(to, 0, moved)
-      return withMiniSteps(p, next)
+      const next = reorderSteps(steps, draggedId, targetId, position)
+      return next === steps ? p : withMiniSteps(p, next)
     })
+  )
 
   const flow = getFlowGroup(form)
   const flowConfig = FLOW_CONFIG[flow]
@@ -1108,12 +1110,12 @@ const TaskModal: React.FC<TaskModalProps> = ({ initial, isDraft = false, knownAs
             <div className="space-y-2">
               {miniSteps.map((step, i) => (
                 <div key={step.id}
-                  onDragOver={e=>e.preventDefault()}
-                  onDrop={()=>{reorderMiniStep(step.id); setDragStepId(null)}}
-                  className={`flex items-center gap-2 rounded ${dragStepId === step.id ? 'opacity-50' : ''}`}>
+                  {...stepDrag.rowProps(step.id)}
+                  className={`relative flex items-center gap-2 rounded ${stepDrag.draggedId === step.id ? 'opacity-50' : ''}`}>
+                  <StepDropIndicator position={stepDrag.target?.id === step.id ? stepDrag.target.position : undefined}/>
                   <span draggable
-                    onDragStart={()=>setDragStepId(step.id)}
-                    onDragEnd={()=>setDragStepId(null)}
+                    onDragStart={e=>stepDrag.start(e, step.id)}
+                    onDragEnd={stepDrag.end}
                     title="ドラッグして並び替え"
                     className="cursor-grab text-gray-300 hover:text-gray-500">
                     <GripVertical size={15}/>
@@ -1186,7 +1188,7 @@ interface TaskCardProps {
   onComplete:(id:string)=>void; onToday:(id:string)=>void; onPin:(id:string)=>void
   onQuickUpdate:(id:string, patch:Partial<Task>, detail:string)=>void
   onStepToggle:(taskId:string, stepId:string)=>void
-  onStepReorder:(taskId:string, draggedStepId:string, targetStepId:string)=>void
+  onStepReorder:(taskId:string, draggedStepId:string, targetStepId:string, position:StepDropPosition)=>void
   onEdit:(t:Task)=>void; onDelete:(id:string)=>void
   hideAssignee?: boolean
 }
@@ -1196,6 +1198,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
   onComplete, onToday, onPin, onQuickUpdate, onStepToggle, onStepReorder, onEdit, onDelete, hideAssignee=false,
 }) => {
   const pc         = PRIORITY_CONFIG[task.priority]
+  const stepDrag = useMiniStepDrag((draggedId, targetId, position) => onStepReorder(task.id, draggedId, targetId, position))
   const visibleSteps = normalizeMiniSteps(task.miniSteps).filter(s => s.text.trim())
   const completedStepCount = visibleSteps.filter(s => s.done).length
   const flow = getFlowGroup(task)
@@ -1388,10 +1391,11 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 return (
                   <div key={step.id}
                     draggable
-                    onDragStart={e=>{e.stopPropagation(); e.dataTransfer.setData('text/plain', step.id)}}
-                    onDragOver={e=>{e.preventDefault(); e.stopPropagation()}}
-                    onDrop={e=>{e.preventDefault(); e.stopPropagation(); onStepReorder(task.id, e.dataTransfer.getData('text/plain'), step.id)}}
-                    className={`flex items-start gap-1.5 cursor-grab rounded border px-1.5 py-1 transition-colors ${stepUrgency.isAlert ? stepUrgency.stepRow : 'border-transparent'}`}>
+                    onDragStart={e=>stepDrag.start(e, step.id)}
+                    onDragEnd={stepDrag.end}
+                    {...stepDrag.rowProps(step.id)}
+                    className={`relative flex items-start gap-1.5 cursor-grab rounded border px-1.5 py-1 transition-colors ${stepDrag.draggedId === step.id ? 'opacity-50' : ''} ${stepUrgency.isAlert ? stepUrgency.stepRow : 'border-transparent'}`}>
+                    <StepDropIndicator position={stepDrag.target?.id === step.id ? stepDrag.target.position : undefined}/>
                     <button
                       type="button"
                       onMouseDown={e=>e.stopPropagation()}
@@ -1459,7 +1463,7 @@ interface AssigneeColsProps {
   onComplete:(id:string)=>void; onToday:(id:string)=>void; onPin:(id:string)=>void
   onQuickUpdate:(id:string, patch:Partial<Task>, detail:string)=>void
   onStepToggle:(taskId:string, stepId:string)=>void
-  onStepReorder:(taskId:string, draggedStepId:string, targetStepId:string)=>void
+  onStepReorder:(taskId:string, draggedStepId:string, targetStepId:string, position:StepDropPosition)=>void
   onEdit:(t:Task)=>void; onDelete:(id:string)=>void
 }
 
@@ -2476,16 +2480,13 @@ export default function App() {
     addHistory('updated', task, `アクション${nextDone ? '完了' : '未完了'}: ${step.text}`)
   }
 
-  const handleStepReorder = (taskId: string, draggedStepId: string, targetStepId: string) => {
+  const handleStepReorder = (taskId: string, draggedStepId: string, targetStepId: string, position: StepDropPosition) => {
     if (!draggedStepId || draggedStepId === targetStepId) return
     const task = tasks.find(t => t.id === taskId); if (!task) return
     const steps = normalizeMiniSteps(task.miniSteps)
-    const from = steps.findIndex(s => s.id === draggedStepId)
-    const to = steps.findIndex(s => s.id === targetStepId)
-    if (from < 0 || to < 0) return
-    const nextSteps = [...steps]
-    const [moved] = nextSteps.splice(from, 1)
-    nextSteps.splice(to, 0, moved)
+    const nextSteps = reorderSteps(steps, draggedStepId, targetStepId, position)
+    if (nextSteps === steps) return
+    const moved = steps.find(s => s.id === draggedStepId)!
     setTasks(prev => prev.map(t => t.id === taskId ? withMiniSteps(t, nextSteps) : t))
     addHistory('updated', task, `アクション並び替え: ${moved.text || '未入力アクション'}`)
   }
